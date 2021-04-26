@@ -2,7 +2,7 @@
   "name": "@amilabs/nginx-logs-replay",
   "version": "1.0.1",
   "bin": {
-    "nginx-replay": "index.js"
+    "nginx-logs-replay": "index.js"
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
