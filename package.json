@@ -1,0 +1,25 @@
+{
+  "name": "@amilabs/nginx-logs-replay",
+  "version": "1.0.0",
+  "bin": {
+    "nginx-replay": "index.js"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "replay",
+    "nginx",
+    "logs"
+  ],
+  "author": "Egor Vasilyev <egorvas@gmail.com>",
+  "license": "Apache-2.0",
+  "description": "Replay nginx-like logs into a test HTTP server for stress testing",
+  "dependencies": {
+    "axios": "0.21.1",
+    "commander": "7.2.0",
+    "moment": "2.29.1",
+    "nginxparser": "2.1.0",
+    "winston": "3.3.3"
+  }
+}
