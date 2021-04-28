@@ -18,6 +18,7 @@ Options:
   -r, --ratio <number>                         acceleration / deceleration rate of sending requests, eg: 2, 0.5 (default: "1")
   --format <string>                            format of the nginx log (default: "$remote_addr - $remote_user [$time_local] \"$request\" $status $body_bytes_sent \"$http_referer\" \"$http_user_agent\"")
   --formatTime <string>                        format of the nginx time (default: "DD/MMM/YYYY:HH:mm:ss Z")
+  --startTimestamp <number>                    start replaying logs from this timestamp (default: "0")  
   -d --debug                                   show debug messages in console (default: false)
   -l, --logFile <path>                         save results to the logs file (default: "")
   -t, --timeout <int>                          timeout fo the requests

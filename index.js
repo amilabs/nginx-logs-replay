@@ -18,6 +18,7 @@ program
     .option('-r, --ratio <number>', 'acceleration / deceleration rate of sending requests, eg: 2, 0.5', '1')
     .option('--format <string>', 'format of the nginx log', defaultFormat)
     .option('--formatTime <string>', 'format of the nginx time', defaultFormatTime)
+    .option('--startTimestamp <number>', 'start replaying logs from this timestamp', '0')
     .option('-d --debug', 'show debug messages in console', false)
     .option('-l, --logFile <path>', 'save results to the logs file', '')
     .option('-t, --timeout <int>', 'timeout fo the requests')
@@ -30,7 +31,7 @@ program
     .option('-s, --stats', 'show stats of the requests', false)
     .option('--deleteQueryStats <comma separated string>', 'delete some query for calculating stats, eg: "page,limit,size"', '')
     .option('--statsOnlyPath', 'keep only endpoints for showing stats', false)
-    .option('--hideStatsLimit <int>', 'limit number of stats');
+    .option('--hideStatsLimit <int>', 'limit number of stats', '0');
 
 program.parse(process.argv);
 const args = program.opts();
@@ -111,6 +112,9 @@ if (args.logFile) {
     if (fs.existsSync(args.logFile)) fs.unlinkSync(args.logFile);
 }
 
+const secondsRepeats = {};
+let currentTimestamp = 0;
+
 //Display results info in case of interruption
 if (process.platform === "win32") {
     rl.createInterface({
@@ -124,26 +128,29 @@ if (process.platform === "win32") {
 }
 
 process.on("SIGINT", () => {
+    if (currentTimestamp>0) mainLogger.info(`Interrupted at timestamp ${currentTimestamp}`);
     generateReport();
     process.exit();
 });
 
-
-const secondsRepeats = {};
+args.startTimestamp = args.startTimestamp.length>10? args.startTimestamp: args.startTimestamp*1000;
 parser.read(args.filePath, function (row) {
     const timestamp = Moment(row.time_local, args.formatTime).unix() * 1000;
-    dataArray.push({
-        agent: row.http_user_agent,
-        status: row.status,
-        req: row.request,
-        timestamp
-    });
-    if (args.scaleMode) {
-        secondsRepeats[timestamp] ? secondsRepeats[timestamp] += 1 : secondsRepeats[timestamp] = 1;
+    if (timestamp>args.startTimestamp){
+        dataArray.push({
+            agent: row.http_user_agent,
+            status: row.status,
+            req: row.request,
+            timestamp
+        });
+        if (args.scaleMode) {
+            secondsRepeats[timestamp] ? secondsRepeats[timestamp] += 1 : secondsRepeats[timestamp] = 1;
+        }
     }
 }, async function (err) {
     if (err) throw err;
     startTime = +new Date();
+    if (dataArray.length===0) mainLogger.info(`No logs for the replaying`);
     for (let i = 0; i < dataArray.length; i++) {
         const now = +new Date();
         finishTime = now;
@@ -160,6 +167,7 @@ parser.read(args.filePath, function (row) {
             }
             stats[statsUrl] ? stats[statsUrl] += 1 : stats[statsUrl] = 1;
         }
+        currentTimestamp=dataArray[i].timestamp;
         sendRequest(requestMethod, requestUrl, now, dataArray[i].agent, dataArray[i].status, dataArray[i].timestamp);
         if (!args.skipSleep && dataArray[i].timestamp !== dataArray[dataArray.length - 1].timestamp) {
             if (args.scaleMode) {
@@ -235,10 +243,8 @@ function generateReport(){
     mainLogger.info('___________________________________________________________________________');
     mainLogger.info(`Total number of events: ${numberOfSuccessfulEvents+numberOfFailedEvents}. Number of the failed events: ${numberOfFailedEvents}. Percent of the successful events: ${(100 * numberOfSuccessfulEvents / (numberOfSuccessfulEvents+numberOfFailedEvents)).toFixed(2)}%.`);
     mainLogger.info(`Total response time: ${(totalResponseTime / 1000).toFixed(2)} seconds. Total requests time: ${(finishTime - startTime) / 1000} seconds. Total sleep time: ${(totalSleepTime / 1000).toFixed(2)} seconds.`);
-    mainLogger.info(`Original time: ${(dataArray[dataArray.length - 1].timestamp - dataArray[0].timestamp) / 1000} seconds. Original rps: ${(1000 * dataArray.length / (dataArray[dataArray.length - 1].timestamp - dataArray[0].timestamp)).toFixed(4)}. Replay rps: ${(numberOfSuccessfulEvents+numberOfFailedEvents * 1000 / (finishTime - startTime)).toFixed(4)}.`);
-    console.log(numberOfSuccessfulEvents+numberOfFailedEvents)
-    console.log(dataArray.length)
-    if (args.getStats) {
+    mainLogger.info(`Original time: ${(dataArray[dataArray.length - 1].timestamp - dataArray[0].timestamp) / 1000} seconds. Original rps: ${(1000 * dataArray.length / (dataArray[dataArray.length - 1].timestamp - dataArray[0].timestamp)).toFixed(4)}. Replay rps: ${((numberOfSuccessfulEvents+numberOfFailedEvents) * 1000 / (finishTime - startTime)).toFixed(4)}.`);
+    if (args.stats) {
         const hiddenStats = {};
         let sortedStats = Object.keys(stats).sort((a, b) => stats[b] - stats[a]);
         mainLogger.info('___________________________________________________________________________');
