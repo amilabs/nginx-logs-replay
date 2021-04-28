@@ -6,6 +6,7 @@ const axios = require('axios').default;
 const https = require('https');
 const Winston = require('winston');
 const {program} = require('commander');
+const rl = require("readline");
 program.version(process.env.npm_package_version);
 
 const defaultFormat = '$remote_addr - $remote_user [$time_local] "$request" $status $body_bytes_sent "$http_referer" "$http_user_agent"';
@@ -110,6 +111,24 @@ if (args.logFile) {
     if (fs.existsSync(args.logFile)) fs.unlinkSync(args.logFile);
 }
 
+//Display results info in case of interruption
+if (process.platform === "win32") {
+    rl.createInterface({
+        input: process.stdin,
+        output: process.stdout
+    });
+
+    rl.on("SIGINT", () => {
+        process.emit("SIGINT");
+    });
+}
+
+process.on("SIGINT", () => {
+    generateReport();
+    process.exit();
+});
+
+
 const secondsRepeats = {};
 parser.read(args.filePath, function (row) {
     const timestamp = Moment(row.time_local, args.formatTime).unix() * 1000;
@@ -127,7 +146,7 @@ parser.read(args.filePath, function (row) {
     startTime = +new Date();
     for (let i = 0; i < dataArray.length; i++) {
         const now = +new Date();
-        if (i === dataArray.length - 1) finishTime = now;
+        finishTime = now;
         let requestMethod = dataArray[i].req.split(" ")[0];
         let requestUrl = dataArray[i].req.split(" ")[1];
         debugLogger.info(`Sending ${requestMethod} request to ${requestUrl} at ${now}`);
@@ -207,25 +226,30 @@ function sendRequest(method, url, sendTime, agent, originalStatus, timestamp) {
             }
         }).then(function () {
         if (numberOfFailedEvents + numberOfSuccessfulEvents === dataArray.length) {
-            mainLogger.info('___________________________________________________________________________');
-            mainLogger.info(`Total number of events: ${dataArray.length}. Number of the failed events: ${numberOfFailedEvents}. Percent of the successful events: ${(100 * numberOfSuccessfulEvents / dataArray.length).toFixed(2)}%.`);
-            mainLogger.info(`Total response time: ${(totalResponseTime / 1000).toFixed(2)} seconds. Total requests time: ${(finishTime - startTime) / 1000} seconds. Total sleep time: ${(totalSleepTime / 1000).toFixed(2)} seconds.`);
-            mainLogger.info(`Original time: ${(dataArray[dataArray.length - 1].timestamp - dataArray[0].timestamp) / 1000} seconds. Original rps: ${(1000 * dataArray.length / (dataArray[dataArray.length - 1].timestamp - dataArray[0].timestamp)).toFixed(4)}. Replay rps: ${(dataArray.length * 1000 / (finishTime - startTime)).toFixed(4)}.`);
-            if (args.getStats) {
-                const hiddenStats = {};
-                let sortedStats = Object.keys(stats).sort((a, b) => stats[b] - stats[a]);
-                mainLogger.info('___________________________________________________________________________');
-                mainLogger.info('Stats results:');
-                sortedStats.forEach(x => {
-                    if (stats[x] > args.hideStatsLimit) {
-                        mainLogger.info(`${x} : ${stats[x]}`)
-                    } else {
-                        hiddenStats[stats[x]] ? hiddenStats[stats[x]] += 1 : hiddenStats[stats[x]] = 1;
-                    }
-                });
-                if (Object.keys(hiddenStats) > 0) mainLogger.info(`Hidden stats: ${JSON.stringify(hiddenStats)}`);
-            }
-
+            generateReport();
         }
     });
+}
+
+function generateReport(){
+    mainLogger.info('___________________________________________________________________________');
+    mainLogger.info(`Total number of events: ${numberOfSuccessfulEvents+numberOfFailedEvents}. Number of the failed events: ${numberOfFailedEvents}. Percent of the successful events: ${(100 * numberOfSuccessfulEvents / (numberOfSuccessfulEvents+numberOfFailedEvents)).toFixed(2)}%.`);
+    mainLogger.info(`Total response time: ${(totalResponseTime / 1000).toFixed(2)} seconds. Total requests time: ${(finishTime - startTime) / 1000} seconds. Total sleep time: ${(totalSleepTime / 1000).toFixed(2)} seconds.`);
+    mainLogger.info(`Original time: ${(dataArray[dataArray.length - 1].timestamp - dataArray[0].timestamp) / 1000} seconds. Original rps: ${(1000 * dataArray.length / (dataArray[dataArray.length - 1].timestamp - dataArray[0].timestamp)).toFixed(4)}. Replay rps: ${(numberOfSuccessfulEvents+numberOfFailedEvents * 1000 / (finishTime - startTime)).toFixed(4)}.`);
+    console.log(numberOfSuccessfulEvents+numberOfFailedEvents)
+    console.log(dataArray.length)
+    if (args.getStats) {
+        const hiddenStats = {};
+        let sortedStats = Object.keys(stats).sort((a, b) => stats[b] - stats[a]);
+        mainLogger.info('___________________________________________________________________________');
+        mainLogger.info('Stats results:');
+        sortedStats.forEach(x => {
+            if (stats[x] > args.hideStatsLimit) {
+                mainLogger.info(`${x} : ${stats[x]}`)
+            } else {
+                hiddenStats[stats[x]] ? hiddenStats[stats[x]] += 1 : hiddenStats[stats[x]] = 1;
+            }
+        });
+        if (Object.keys(hiddenStats) > 0) mainLogger.info(`Hidden stats: ${JSON.stringify(hiddenStats)}`);
+    }
 }
