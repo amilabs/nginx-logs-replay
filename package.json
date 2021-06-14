@@ -12,6 +12,10 @@
     "nginx",
     "logs"
   ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/amilabs/nginx-logs-replay.git"
+  },
   "author": "Egor Vasilyev <egorvas@gmail.com>",
   "license": "Apache-2.0",
   "description": "Replay nginx-like logs into a test HTTP server for stress testing",

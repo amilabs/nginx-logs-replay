@@ -29,8 +29,10 @@ program
     .option('--skipSsl', 'skip ssl errors', false)
     .option('--datesFormat <string>', 'format of dates to display in logs (regarding Moment.js parsing format)', "DD-MM-YYYY:HH:mm:ss")
     .option('-s, --stats', 'show stats of the requests', false)
-    .option('--deleteQueryStats <comma separated string>', 'delete some query for calculating stats, eg: "page,limit,size"', '')
+    .option('--deleteQueryStats [strings...]', 'delete some query for calculating stats, eg: "page limit size"', [])
     .option('--statsOnlyPath', 'keep only endpoints for showing stats', false)
+    .option('--filterOnly [strings...]', 'filter logs for replaying, eg: "/test data .php"', [])
+    .option('--filterSkip [strings...]', 'skip logs for replaying, eg: "/test data .php"', [])
     .option('--hideStatsLimit <int>', 'limit number of stats', '0');
 
 program.parse(process.argv);
@@ -94,7 +96,7 @@ let startTime = 0;
 let finishTime = 0;
 let totalSleepTime = 0;
 
-const deleteQuery = args.deleteQueryStats.split(",");
+const deleteQuery = args.deleteQueryStats;
 const stats = {};
 
 fs.access(args.filePath, fs.F_OK, (err) => {
@@ -136,7 +138,15 @@ process.on("SIGINT", () => {
 args.startTimestamp = args.startTimestamp.length>10? args.startTimestamp: args.startTimestamp*1000;
 parser.read(args.filePath, function (row) {
     const timestamp = Moment(row.time_local, args.formatTime).unix() * 1000;
-    if (timestamp>args.startTimestamp){
+    let isFilterSkip = false;
+    args.filterSkip.forEach(filter => {
+        if (row.request.includes(filter)) isFilterSkip = true;
+    });
+    let isFilterOnly = args.filterOnly.length === 0? true:false;
+    args.filterOnly.forEach(filter => {
+        if (row.request.includes(filter)) isFilterOnly = true;
+    });
+    if (timestamp>args.startTimestamp && isFilterOnly && !isFilterSkip){
         dataArray.push({
             agent: row.http_user_agent,
             status: row.status,
