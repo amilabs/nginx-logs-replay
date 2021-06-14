@@ -7,6 +7,7 @@ const https = require('https');
 const Winston = require('winston');
 const {program} = require('commander');
 const rl = require("readline");
+const Stats = require('fast-stats').Stats;
 program.version(process.env.npm_package_version);
 
 const defaultFormat = '$remote_addr - $remote_user [$time_local] "$request" $status $body_bytes_sent "$http_referer" "$http_user_agent"';
@@ -92,10 +93,10 @@ const dataArray = [];
 let numberOfSuccessfulEvents = 0;
 let numberOfFailedEvents = 0;
 let totalResponseTime = 0;
-let responseTimes = [];
 let startTime = 0;
 let finishTime = 0;
 let totalSleepTime = 0;
+let numStats = new Stats();
 
 const deleteQuery = args.deleteQueryStats;
 const stats = {};
@@ -240,7 +241,7 @@ function sendRequest(method, url, sendTime, agent, originalStatus, timestamp) {
             }
             let responseTime = +new Date() - sendTime;
             totalResponseTime += responseTime;
-            responseTimes.push(responseTime);
+            numStats.push(responseTime);
             resultLogger.info(`${response.status}     ${originalStatus}     ${Moment.unix(timestamp / 1000).format(args.datesFormat)}     ${Moment.unix(sendTime / 1000).format(args.datesFormat)}     ${(responseTime / 1000).toFixed(2)}     ${url}`)
         })
         .catch(function (error) {
@@ -256,7 +257,7 @@ function sendRequest(method, url, sendTime, agent, originalStatus, timestamp) {
                 }
                 let responseTime = +new Date() - sendTime;
                 totalResponseTime += responseTime;
-                responseTimes.push(responseTime);
+                numStats.push(responseTime);
                 resultLogger.info(`${error.response.status}     ${originalStatus}     ${Moment.unix(timestamp / 1000).format(args.datesFormat)}     ${Moment.unix(sendTime / 1000).format(args.datesFormat)}     ${(responseTime / 1000).toFixed(2)}     ${url}`)
             }
         }).then(function () {
@@ -269,7 +270,9 @@ function sendRequest(method, url, sendTime, agent, originalStatus, timestamp) {
 function generateReport(){
     mainLogger.info('___________________________________________________________________________');
     mainLogger.info(`Total number of events: ${numberOfSuccessfulEvents+numberOfFailedEvents}. Number of the failed events: ${numberOfFailedEvents}. Percent of the successful events: ${(100 * numberOfSuccessfulEvents / (numberOfSuccessfulEvents+numberOfFailedEvents)).toFixed(2)}%.`);
-    mainLogger.info(`Total response time: ${(totalResponseTime / 1000).toFixed(2)} seconds. Average response time: ${((totalResponseTime / 1000)/(numberOfSuccessfulEvents+numberOfFailedEvents)).toFixed(5)} seconds. Median response time: ${(median(responseTimes)/1000).toFixed(3)} seconds. Maximum response time: ${(Math.max.apply(null, responseTimes)/1000).toFixed(3)} seconds.`);
+    mainLogger.info(`Total response time: ${(totalResponseTime / 1000).toFixed(2)} seconds. Average response time: ${(numStats.amean()/1000).toFixed(3)} seconds. Median response time: ${(numStats.median()/1000).toFixed(3)} seconds.`);
+    mainLogger.info(`Minimum response time: ${(numStats.range()[0]/1000).toFixed(3)} seconds. Maximum response time: ${(numStats.range()[1]/1000).toFixed(3)} seconds.`);
+    mainLogger.info(`Percentile 1: ${(numStats.percentile(1)/1000).toFixed(3)} seconds. Percentile 5: ${(numStats.percentile(5)/1000).toFixed(3)} seconds. Percentile 25: ${(numStats.percentile(25)/1000).toFixed(3)} seconds. Percentile 75: ${(numStats.percentile(75)/1000).toFixed(3)} seconds. Percentile 95: ${(numStats.percentile(95)/1000).toFixed(3)} seconds. Percentile 99: ${(numStats.percentile(99)/1000).toFixed(3)} seconds.`);
     mainLogger.info(`Total requests time: ${(finishTime - startTime) / 1000} seconds. Total sleep time: ${(totalSleepTime / 1000).toFixed(2)} seconds.`);
     mainLogger.info(`Original time: ${(dataArray[dataArray.length - 1].timestamp - dataArray[0].timestamp) / 1000} seconds. Original rps: ${(1000 * dataArray.length / (dataArray[dataArray.length - 1].timestamp - dataArray[0].timestamp)).toFixed(4)}. Replay rps: ${((numberOfSuccessfulEvents+numberOfFailedEvents) * 1000 / (finishTime - startTime)).toFixed(4)}.`);
     if (args.stats) {
