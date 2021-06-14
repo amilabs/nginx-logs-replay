@@ -209,7 +209,7 @@ function sendRequest(method, url, sendTime, agent, originalStatus, timestamp) {
     const httpsAgent = new https.Agent({
         rejectUnauthorized: !args.skipSsl
     });
-    let config = {httpsAgent, method, url: args.prefix + url};
+    let config = {httpsAgent, method, url: args.prefix + url, auth:{}};
     if (args.username) config.auth.username = args.username;
     if (args.password) config.auth.password = args.password;
     if (args.timeout) config.timeout = args.timeout;
@@ -252,7 +252,8 @@ function sendRequest(method, url, sendTime, agent, originalStatus, timestamp) {
 function generateReport(){
     mainLogger.info('___________________________________________________________________________');
     mainLogger.info(`Total number of events: ${numberOfSuccessfulEvents+numberOfFailedEvents}. Number of the failed events: ${numberOfFailedEvents}. Percent of the successful events: ${(100 * numberOfSuccessfulEvents / (numberOfSuccessfulEvents+numberOfFailedEvents)).toFixed(2)}%.`);
-    mainLogger.info(`Total response time: ${(totalResponseTime / 1000).toFixed(2)} seconds. Total requests time: ${(finishTime - startTime) / 1000} seconds. Total sleep time: ${(totalSleepTime / 1000).toFixed(2)} seconds.`);
+    mainLogger.info(`Total response time: ${(totalResponseTime / 1000).toFixed(2)} seconds. Average response time: ${((totalResponseTime / 1000)/(numberOfSuccessfulEvents+numberOfFailedEvents)).toFixed(5)} seconds.`);
+    mainLogger.info(`Total requests time: ${(finishTime - startTime) / 1000} seconds. Total sleep time: ${(totalSleepTime / 1000).toFixed(2)} seconds.`);
     mainLogger.info(`Original time: ${(dataArray[dataArray.length - 1].timestamp - dataArray[0].timestamp) / 1000} seconds. Original rps: ${(1000 * dataArray.length / (dataArray[dataArray.length - 1].timestamp - dataArray[0].timestamp)).toFixed(4)}. Replay rps: ${((numberOfSuccessfulEvents+numberOfFailedEvents) * 1000 / (finishTime - startTime)).toFixed(4)}.`);
     if (args.stats) {
         const hiddenStats = {};
