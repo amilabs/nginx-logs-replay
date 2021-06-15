@@ -296,16 +296,23 @@ function getPercentile(stat, toSeconds=false){
     return percentilesObject;
 }
 
+function getResponseTime(stat, toSeconds=false){
+    return {minimum:(stat.range()[0]/(toSeconds?1000:1)).toFixed(3),
+        maximum:(stat.range()[1]/(toSeconds?1000:1)).toFixed(3),
+        average: (stat.amean()/(toSeconds?1000:1)).toFixed(3),
+        total: (stat.sum/(toSeconds?1000:1)).toFixed(3),
+        number: stat.length};
+}
+
 function generateReport(){
     mainLogger.info('___________________________________________________________________________');
-    mainLogger.info(`Total number of events: ${numberOfSuccessfulEvents+numberOfFailedEvents}. Number of the failed events: ${numberOfFailedEvents}. Percent of the successful events: ${(100 * numberOfSuccessfulEvents / (numberOfSuccessfulEvents+numberOfFailedEvents)).toFixed(2)}%.`);
-    mainLogger.info(`Total response time: ${(totalResponseTime / 1000).toFixed(2)} seconds. Average response time: ${(numStats.amean()/1000).toFixed(3)} seconds.`);
-    mainLogger.info(`Minimum response time: ${(numStats.range()[0]/1000).toFixed(3)} seconds. Maximum response time: ${(numStats.range()[1]/1000).toFixed(3)} seconds.`);
+    mainLogger.info(`Total number of requests: ${numberOfSuccessfulEvents+numberOfFailedEvents}. Number of the failed requests: ${numberOfFailedEvents}. Percent of the successful requests: ${(100 * numberOfSuccessfulEvents / (numberOfSuccessfulEvents+numberOfFailedEvents)).toFixed(2)}%.`);
+    mainLogger.info(`Response time: ${JSON.stringify(getResponseTime(numStats,true))}`);
     mainLogger.info(`Percentile: ${JSON.stringify(getPercentile(numStats, true))}`);
-    mainLogger.info(`Minimum Mongo time: ${statsMongoTime.range()[0].toFixed(5)} seconds. Maximum Mongo time: ${statsMongoTime.range()[1].toFixed(5)} seconds. Sum Mongo time: ${statsMongoTime.sum.toFixed(3)}. Total Mongo requests: ${statsMongoTime.length}. Average mongo time: ${(statsMongoTime.amean()).toFixed(3)} seconds.`);
-    mainLogger.info(`Mongo Percentile: ${JSON.stringify(getPercentile(statsMongoTime))}`);
-    mainLogger.info(`Minimum ClickHouse time: ${statsClickHouseTime.range()[0].toFixed(5)} seconds. Maximum ClickHouse time: ${statsClickHouseTime.range()[1].toFixed(5)} seconds. Sum ClickHouse time: ${statsClickHouseTime.sum.toFixed(3)}. Total ClickHouse requests: ${statsClickHouseTime.length}. Average ClickHouse time: ${statsClickHouseTime.amean().toFixed(3)} seconds.`);
-    mainLogger.info(`ClickHouse Percentile: ${JSON.stringify(getPercentile(statsClickHouseTime))}`);
+    mainLogger.info(`Mongo response time: ${JSON.stringify(getResponseTime(statsMongoTime, false))}`);
+    mainLogger.info(`Mongo percentile: ${JSON.stringify(getPercentile(statsMongoTime))}`);
+    mainLogger.info(`ClickHouse response time: ${JSON.stringify(getResponseTime(statsClickHouseTime, false))}`);
+    mainLogger.info(`ClickHouse percentile: ${JSON.stringify(getPercentile(statsClickHouseTime))}`);
     mainLogger.info(`Total requests time: ${(finishTime - startTime) / 1000} seconds. Total sleep time: ${(totalSleepTime / 1000).toFixed(2)} seconds.`);
     mainLogger.info(`Original time: ${(dataArray[dataArray.length - 1].timestamp - dataArray[0].timestamp) / 1000} seconds. Original rps: ${(1000 * dataArray.length / (dataArray[dataArray.length - 1].timestamp - dataArray[0].timestamp)).toFixed(4)}. Replay rps: ${((numberOfSuccessfulEvents+numberOfFailedEvents) * 1000 / (finishTime - startTime)).toFixed(4)}. Ratio: ${args.ratio}.`);
     if (args.stats) {
