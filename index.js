@@ -276,10 +276,10 @@ function sendRequest(method, url, sendTime, agent, originalStatus, timestamp) {
                 let responseTime = +new Date() - sendTime;
                 totalResponseTime += responseTime;
                 numStats.push(responseTime);
-                if (response.data.debug){
-                    if (response.data.debug.totalTime) statsTotalTime.push(response.data.debug.totalTime);
-                    if (response.data.debug.mongo) statsTotalTime.push(response.data.debug.mongo.time);
-                    if (response.data.debug.clickhouse) statsTotalTime.push(response.data.debug.clickhouse.time);
+                if (error.response.data.debug){
+                    if (error.response.data.debug.totalTime) statsTotalTime.push(response.data.debug.totalTime);
+                    if (error.response.data.debug.mongo) statsTotalTime.push(response.data.debug.mongo.time);
+                    if (error.response.data.debug.clickhouse) statsTotalTime.push(response.data.debug.clickhouse.time);
                 }
                 resultLogger.info(`${error.response.status}     ${originalStatus}     ${Moment.unix(timestamp / 1000).format(args.datesFormat)}     ${Moment.unix(sendTime / 1000).format(args.datesFormat)}     ${(responseTime / 1000).toFixed(2)}     ${url}`)
             }
