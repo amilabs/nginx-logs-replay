@@ -34,6 +34,7 @@ program
     .option('--statsOnlyPath', 'keep only endpoints for showing stats', false)
     .option('--filterOnly [strings...]', 'filter logs for replaying, eg: "/test data .php"', [])
     .option('--filterSkip [strings...]', 'skip logs for replaying, eg: "/test data .php"', [])
+    .option('--customQueryParams [strings...]', 'additional query params fro requests, eg: "test=true size=3"', [])
     .option('--hideStatsLimit <int>', 'limit number of stats', '0');
 
 program.parse(process.argv);
@@ -167,7 +168,16 @@ parser.read(args.filePath, function (row) {
         const now = +new Date();
         finishTime = now;
         let requestMethod = dataArray[i].req.split(" ")[0];
-        let requestUrl = dataArray[i].req.split(" ")[1];
+        let requestUrl;
+        if (args.customQueryParams.length!==0){
+            requestUrl = new URL(args.prefix + dataArray[i].req.split(" ")[1]);
+            args.customQueryParams.forEach(queryParam=>{
+                requestUrl.searchParams.append(queryParam.split('=')[0],queryParam.split('=')[1]);
+            });
+            requestUrl = requestUrl.toString().replace(args.prefix, "");
+        }else{
+            requestUrl = dataArray[i].req.split(" ")[1];
+        }
         debugLogger.info(`Sending ${requestMethod} request to ${requestUrl} at ${now}`);
         if (args.stats) {
             let statsUrl = new URL(args.prefix + requestUrl);
