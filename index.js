@@ -98,7 +98,6 @@ let startTime = 0;
 let finishTime = 0;
 let totalSleepTime = 0;
 let numStats = new Stats();
-let statsTotalTime = new Stats();
 let statsMongoTime = new Stats();
 let statsClickHouseTime = new Stats();
 
@@ -256,9 +255,8 @@ function sendRequest(method, url, sendTime, agent, originalStatus, timestamp) {
             totalResponseTime += responseTime;
             numStats.push(responseTime);
             if (response.data.debug){
-                if (response.data.debug.totalTime) statsTotalTime.push(response.data.debug.totalTime);
-                if (response.data.debug.mongo) statsMongoTime.push(response.data.debug.mongo.time);
-                if (response.data.debug.clickhouse) statsClickHouseTime.push(response.data.debug.clickhouse.time);
+                if (response.data.debug.mongo) statsMongoTime.push(response.data.debug.mongo);
+                if (response.data.debug.clickhouse) statsClickHouseTime.push(response.data.debug.clickhouse);
             }
             resultLogger.info(`${response.status}     ${originalStatus}     ${Moment.unix(timestamp / 1000).format(args.datesFormat)}     ${Moment.unix(sendTime / 1000).format(args.datesFormat)}     ${(responseTime / 1000).toFixed(2)}     ${url}`)
         })
@@ -277,9 +275,8 @@ function sendRequest(method, url, sendTime, agent, originalStatus, timestamp) {
                 totalResponseTime += responseTime;
                 numStats.push(responseTime);
                 if (error.response.data.debug){
-                    if (error.response.data.debug.totalTime) statsTotalTime.push(error.response.data.debug.totalTime);
-                    if (error.response.data.debug.mongo) statsTotalTime.push(error.response.data.debug.mongo.time);
-                    if (error.response.data.debug.clickhouse) statsTotalTime.push(error.response.data.debug.clickhouse.time);
+                    if (error.response.data.debug.mongo) statsMongoTime.push(error.response.data.debug.mongo);
+                    if (error.response.data.debug.clickhouse) statsClickHouseTime.push(error.response.data.debug.clickhouse);
                 }
                 resultLogger.info(`${error.response.status}     ${originalStatus}     ${Moment.unix(timestamp / 1000).format(args.datesFormat)}     ${Moment.unix(sendTime / 1000).format(args.datesFormat)}     ${(responseTime / 1000).toFixed(2)}     ${url}`)
             }
@@ -290,20 +287,27 @@ function sendRequest(method, url, sendTime, agent, originalStatus, timestamp) {
     });
 }
 
+function getPercentile(stat, toSeconds=false){
+    const percentiles = [1,5,25,50,75,95,99];
+    let percentilesObject = {};
+    percentiles.forEach(percentile=>{
+        percentilesObject[percentile] = (stat.percentile(percentile)/(toSeconds?1000:1)).toFixed(3)
+    });
+    return percentilesObject;
+}
+
 function generateReport(){
     mainLogger.info('___________________________________________________________________________');
     mainLogger.info(`Total number of events: ${numberOfSuccessfulEvents+numberOfFailedEvents}. Number of the failed events: ${numberOfFailedEvents}. Percent of the successful events: ${(100 * numberOfSuccessfulEvents / (numberOfSuccessfulEvents+numberOfFailedEvents)).toFixed(2)}%.`);
-    mainLogger.info(`Total response time: ${(totalResponseTime / 1000).toFixed(2)} seconds. Average response time: ${(numStats.amean()/1000).toFixed(3)} seconds. Median response time: ${(numStats.median()/1000).toFixed(3)} seconds.`);
+    mainLogger.info(`Total response time: ${(totalResponseTime / 1000).toFixed(2)} seconds. Average response time: ${(numStats.amean()/1000).toFixed(3)} seconds.`);
     mainLogger.info(`Minimum response time: ${(numStats.range()[0]/1000).toFixed(3)} seconds. Maximum response time: ${(numStats.range()[1]/1000).toFixed(3)} seconds.`);
-    mainLogger.info(`Percentile 1: ${(numStats.percentile(1)/1000).toFixed(3)} seconds. Percentile 5: ${(numStats.percentile(5)/1000).toFixed(3)} seconds. Percentile 25: ${(numStats.percentile(25)/1000).toFixed(3)} seconds. Percentile 75: ${(numStats.percentile(75)/1000).toFixed(3)} seconds. Percentile 95: ${(numStats.percentile(95)/1000).toFixed(3)} seconds. Percentile 99: ${(numStats.percentile(99)/1000).toFixed(3)} seconds.`);
-    mainLogger.info(`Minimum Mongo time: ${statsMongoTime.range()[0].toFixed(5)} seconds. Maximum Mongo time: ${statsMongoTime.range()[1].toFixed(5)} seconds. Sum Mongo time: ${statsMongoTime.sum.toFixed(3)}. Total Mongo requests: ${statsMongoTime.length}. Average mongo time: ${(statsMongoTime.amean()).toFixed(3)} seconds. Median mongo time: ${statsMongoTime.median().toFixed(3)} seconds.`);
-    mainLogger.info(`Mongo Percentile 1: ${statsMongoTime.percentile(1).toFixed(3)} seconds. Mongo Percentile 5: ${statsMongoTime.percentile(5).toFixed(3)} seconds. Mongo Percentile 25: ${statsMongoTime.percentile(25).toFixed(3)} seconds. Mongo Percentile 75: ${statsMongoTime.percentile(75).toFixed(3)} seconds. Mongo Percentile 95: ${statsMongoTime.percentile(95).toFixed(3)} seconds. Mongo Percentile 99: ${statsMongoTime.percentile(99).toFixed(3)} seconds.`);
-    mainLogger.info(`Minimum ClickHouse time: ${statsClickHouseTime.range()[0].toFixed(5)} seconds. Maximum ClickHouse time: ${statsClickHouseTime.range()[1].toFixed(5)} seconds. Sum ClickHouse time: ${statsClickHouseTime.sum.toFixed(3)}. Total ClickHouse requests: ${statsClickHouseTime.length}. Average ClickHouse time: ${statsClickHouseTime.amean().toFixed(3)} seconds. Median ClickHouse time: ${statsClickHouseTime.median().toFixed(3)} seconds.`);
-    mainLogger.info(`ClickHouse Percentile 1: ${statsClickHouseTime.percentile(1).toFixed(3)} seconds. ClickHouse Percentile 5: ${statsClickHouseTime.percentile(5).toFixed(3)} seconds. ClickHouse Percentile 25: ${statsClickHouseTime.percentile(25).toFixed(3)} seconds. ClickHouse Percentile 75: ${statsClickHouseTime.percentile(75).toFixed(3)} seconds. ClickHouse Percentile 95: ${statsClickHouseTime.percentile(95).toFixed(3)} seconds. ClickHouse Percentile 99: ${statsClickHouseTime.percentile(99).toFixed(3)} seconds.`);
-    mainLogger.info(`Minimum db request time: ${statsTotalTime.range()[0].toFixed(5)} seconds. Maximum db request time: ${statsTotalTime.range()[1].toFixed(5)} seconds. Sum db requests time: ${statsTotalTime.sum.toFixed(3)}. Total db requests: ${statsTotalTime.length}. Average Total DB time: ${statsTotalTime.amean().toFixed(3)} seconds. Median Total DB time: ${statsTotalTime.median().toFixed(3)} seconds.`);
-    mainLogger.info(`DB total Percentile 1: ${statsTotalTime.percentile(1).toFixed(3)} seconds. DB total Percentile 5: ${statsTotalTime.percentile(5).toFixed(3)} seconds. DB total Percentile 25: ${statsTotalTime.percentile(25).toFixed(3)} seconds. DB total Percentile 75: ${statsTotalTime.percentile(75).toFixed(3)} seconds. DB total Percentile 95: ${statsTotalTime.percentile(95).toFixed(3)} seconds. DB total Percentile 99: ${statsTotalTime.percentile(99).toFixed(3)} seconds.`);
+    mainLogger.info(`Percentile: ${JSON.stringify(getPercentile(numStats, true))}`);
+    mainLogger.info(`Minimum Mongo time: ${statsMongoTime.range()[0].toFixed(5)} seconds. Maximum Mongo time: ${statsMongoTime.range()[1].toFixed(5)} seconds. Sum Mongo time: ${statsMongoTime.sum.toFixed(3)}. Total Mongo requests: ${statsMongoTime.length}. Average mongo time: ${(statsMongoTime.amean()).toFixed(3)} seconds.`);
+    mainLogger.info(`Mongo Percentile: ${JSON.stringify(getPercentile(statsMongoTime))}`);
+    mainLogger.info(`Minimum ClickHouse time: ${statsClickHouseTime.range()[0].toFixed(5)} seconds. Maximum ClickHouse time: ${statsClickHouseTime.range()[1].toFixed(5)} seconds. Sum ClickHouse time: ${statsClickHouseTime.sum.toFixed(3)}. Total ClickHouse requests: ${statsClickHouseTime.length}. Average ClickHouse time: ${statsClickHouseTime.amean().toFixed(3)} seconds.`);
+    mainLogger.info(`ClickHouse Percentile: ${JSON.stringify(getPercentile(statsClickHouseTime))}`);
     mainLogger.info(`Total requests time: ${(finishTime - startTime) / 1000} seconds. Total sleep time: ${(totalSleepTime / 1000).toFixed(2)} seconds.`);
-    mainLogger.info(`Original time: ${(dataArray[dataArray.length - 1].timestamp - dataArray[0].timestamp) / 1000} seconds. Original rps: ${(1000 * dataArray.length / (dataArray[dataArray.length - 1].timestamp - dataArray[0].timestamp)).toFixed(4)}. Replay rps: ${((numberOfSuccessfulEvents+numberOfFailedEvents) * 1000 / (finishTime - startTime)).toFixed(4)}.`);
+    mainLogger.info(`Original time: ${(dataArray[dataArray.length - 1].timestamp - dataArray[0].timestamp) / 1000} seconds. Original rps: ${(1000 * dataArray.length / (dataArray[dataArray.length - 1].timestamp - dataArray[0].timestamp)).toFixed(4)}. Replay rps: ${((numberOfSuccessfulEvents+numberOfFailedEvents) * 1000 / (finishTime - startTime)).toFixed(4)}. Ratio: ${args.ratio}.`);
     if (args.stats) {
         const hiddenStats = {};
         let sortedStats = Object.keys(stats).sort((a, b) => stats[b] - stats[a]);
