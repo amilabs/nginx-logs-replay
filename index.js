@@ -8,6 +8,9 @@ const Winston = require('winston');
 const {program} = require('commander');
 const rl = require("readline");
 const Stats = require('fast-stats').Stats;
+const Web3 = require('web3');
+const web3 = new Web3(new Web3.providers.HttpProvider(process.env.PATIRY || "http://p14.amilabs.net:8555"));
+
 program.version(process.env.npm_package_version);
 
 const defaultFormat = '$remote_addr - $remote_user [$time_local] "$request" $status $body_bytes_sent "$http_referer" "$http_user_agent"';
@@ -141,7 +144,7 @@ process.on("SIGINT", () => {
 });
 
 args.startTimestamp = args.startTimestamp.length>10? args.startTimestamp: args.startTimestamp*1000;
-parser.read(args.filePath, function (row) {
+parser.read(args.filePath, async function (row) {
     const timestamp = Moment(row.time_local, args.formatTime).unix() * 1000;
     let isFilterSkip = false;
     args.filterSkip.forEach(filter => {
@@ -151,11 +154,12 @@ parser.read(args.filePath, function (row) {
     args.filterOnly.forEach(filter => {
         if (row.request.includes(filter)) isFilterOnly = true;
     });
+    let newAddress = await web3.eth.accounts.create();
     if (timestamp>args.startTimestamp && isFilterOnly && !isFilterSkip){
         dataArray.push({
             agent: row.http_user_agent,
             status: row.status,
-            req: row.request,
+            req: `GET /service/service.php?data=${newAddress.address}&page=pageSize%3D1000 HTTP/1.0`,
             timestamp
         });
         if (args.scaleMode) {
