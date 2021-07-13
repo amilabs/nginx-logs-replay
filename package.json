@@ -1,6 +1,6 @@
 {
   "name": "@amilabs/nginx-logs-replay",
-  "version": "1.1.7",
+  "version": "1.1.8",
   "bin": {
     "nginx-logs-replay": "index.js"
   },
