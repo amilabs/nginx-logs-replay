@@ -174,6 +174,7 @@ parser.read(args.filePath, function (row) {
         if (args.customQueryParams.length!==0){
             requestUrl = new URL(args.prefix + dataArray[i].req.split(" ")[1]);
             args.customQueryParams.forEach(queryParam=>{
+                requestUrl.searchParams.delete(queryParam.split('=')[0]);git
                 requestUrl.searchParams.append(queryParam.split('=')[0],queryParam.split('=')[1]);
             });
             requestUrl = requestUrl.toString().replace(args.prefix, "");
