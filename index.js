@@ -99,6 +99,8 @@ let finishTime = 0;
 let totalSleepTime = 0;
 let numStats = new Stats();
 let statsMongoTime = new Stats();
+let statsMongoTxFullTime = new Stats();
+let statsMongoTxFastTime = new Stats();
 let statsClickHouseTime = new Stats();
 
 const deleteQuery = args.deleteQueryStats;
@@ -257,6 +259,8 @@ function sendRequest(method, url, sendTime, agent, originalStatus, timestamp) {
             numStats.push(responseTime);
             if (response.data.debug){
                 if (response.data.debug.mongo) statsMongoTime.push(response.data.debug.mongo);
+                if (response.data.debug.mongoTxFast) statsMongoTxFastTime.push(response.data.debug.mongoTxFast);
+                if (response.data.debug.mongoTxFull) statsMongoTxFullTime.push(response.data.debug.mongoTxFull);
                 if (response.data.debug.clickhouse) statsClickHouseTime.push(response.data.debug.clickhouse);
             }
             resultLogger.info(`${response.status}     ${originalStatus}     ${Moment.unix(timestamp / 1000).format(args.datesFormat)}     ${Moment.unix(sendTime / 1000).format(args.datesFormat)}     ${(responseTime / 1000).toFixed(2)}     ${url}`)
@@ -277,6 +281,8 @@ function sendRequest(method, url, sendTime, agent, originalStatus, timestamp) {
                 numStats.push(responseTime);
                 if (error.response.data.debug){
                     if (error.response.data.debug.mongo) statsMongoTime.push(error.response.data.debug.mongo);
+                    if (error.response.data.debug.mongoTxFull) statsMongoTxFullTime.push(error.response.data.debug.mongoTxFull);
+                    if (error.response.data.debug.mongoTxFast) statsMongoTxFastTime.push(error.response.data.debug.mongoTxFast);
                     if (error.response.data.debug.clickhouse) statsClickHouseTime.push(error.response.data.debug.clickhouse);
                 }
                 resultLogger.info(`${error.response.status}     ${originalStatus}     ${Moment.unix(timestamp / 1000).format(args.datesFormat)}     ${Moment.unix(sendTime / 1000).format(args.datesFormat)}     ${(responseTime / 1000).toFixed(2)}     ${url}`)
@@ -314,6 +320,10 @@ function generateReport(){
     if (statsMongoTime.length!==0) mainLogger.info(`Mongo percentile: ${JSON.stringify(getPercentile(statsMongoTime))}`);
     if (statsClickHouseTime.length!==0) mainLogger.info(`ClickHouse response time: ${JSON.stringify(getResponseTime(statsClickHouseTime, false))}`);
     if (statsClickHouseTime.length!==0) mainLogger.info(`ClickHouse percentile: ${JSON.stringify(getPercentile(statsClickHouseTime))}`);
+    if (statsMongoTxFastTime.length!==0) mainLogger.info(`Mongo txFast response time: ${JSON.stringify(getResponseTime(statsMongoTxFastTime, false))}`);
+    if (statsMongoTxFastTime.length!==0) mainLogger.info(`Mongo txFast percentile: ${JSON.stringify(getPercentile(statsMongoTxFastTime))}`);
+    if (statsMongoTxFullTime.length!==0) mainLogger.info(`Mongo txFull response time: ${JSON.stringify(getResponseTime(statsMongoTxFullTime, false))}`);
+    if (statsMongoTxFullTime.length!==0) mainLogger.info(`Mongo txFull percentile: ${JSON.stringify(getPercentile(statsMongoTxFullTime))}`);
     mainLogger.info(`Total requests time: ${(finishTime - startTime) / 1000} seconds. Total sleep time: ${(totalSleepTime / 1000).toFixed(2)} seconds.`);
     mainLogger.info(`Original time: ${(dataArray[dataArray.length - 1].timestamp - dataArray[0].timestamp) / 1000} seconds. Original rps: ${(1000 * dataArray.length / (dataArray[dataArray.length - 1].timestamp - dataArray[0].timestamp)).toFixed(4)}. Replay rps: ${((numberOfSuccessfulEvents+numberOfFailedEvents) * 1000 / (finishTime - startTime)).toFixed(4)}. Ratio: ${args.ratio}.`);
     if (args.stats) {
