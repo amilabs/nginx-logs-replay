@@ -356,13 +356,13 @@ function generateReport(){
     if (statsMongoTxFullTime.length!==0) mainLogger.info(`Mongo txFull percentile: ${JSON.stringify(getPercentile(statsMongoTxFullTime))}`);
     if (statsRedisReadTime.length!==0) mainLogger.info(`Redis read time: ${JSON.stringify(getResponseTime(statsRedisReadTime, false))}`);
     if (statsRedisReadTime.length!==0) mainLogger.info(`Redis read percentile: ${JSON.stringify(getPercentile(statsRedisReadTime))}`);
-    if (statsRedisReadNumber.length!==0) mainLogger.info(`Redis read number: ${JSON.stringify(getResponseTime(statsRedisReadNumber, false,0))}`);
+    if (statsRedisReadNumber.length!==0) mainLogger.info(`Redis read count: ${JSON.stringify(getResponseTime(statsRedisReadNumber, false,0))}`);
     if (statsRedisWriteTime.length!==0) mainLogger.info(`Redis write time: ${JSON.stringify(getResponseTime(statsRedisWriteTime, false))}`);
     if (statsRedisWriteTime.length!==0) mainLogger.info(`Redis write percentile: ${JSON.stringify(getPercentile(statsRedisWriteTime))}`);
-    if (statsRedisWriteNumber.length!==0) mainLogger.info(`Redis write number: ${JSON.stringify(getResponseTime(statsRedisWriteNumber, false,0))}`);
+    if (statsRedisWriteNumber.length!==0) mainLogger.info(`Redis write count: ${JSON.stringify(getResponseTime(statsRedisWriteNumber, false,0))}`);
     if (statsEthNodeTime.length!==0) mainLogger.info(`Eth node time: ${JSON.stringify(getResponseTime(statsEthNodeTime, false))}`);
     if (statsEthNodeTime.length!==0) mainLogger.info(`Eth node percentile: ${JSON.stringify(getPercentile(statsEthNodeTime))}`);
-    if (statsEthNodeNumber.length!==0) mainLogger.info(`Eth node number: ${JSON.stringify(getResponseTime(statsEthNodeNumber, false,0))}`);
+    if (statsEthNodeNumber.length!==0) mainLogger.info(`Eth node count: ${JSON.stringify(getResponseTime(statsEthNodeNumber, false,0))}`);
     mainLogger.info(`Total requests time: ${(finishTime - startTime) / 1000} seconds. Total sleep time: ${(totalSleepTime / 1000).toFixed(2)} seconds.`);
     mainLogger.info(`Original time: ${(dataArray[dataArray.length - 1].timestamp - dataArray[0].timestamp) / 1000} seconds. Original rps: ${(1000 * dataArray.length / (dataArray[dataArray.length - 1].timestamp - dataArray[0].timestamp)).toFixed(4)}. Replay rps: ${((numberOfSuccessfulEvents+numberOfFailedEvents) * 1000 / (finishTime - startTime)).toFixed(4)}. Ratio: ${args.ratio}.`);
     if (args.stats) {
