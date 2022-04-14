@@ -343,9 +343,9 @@ function getResponseTime(stat, toSeconds=false, toFixed=3){
 function generateReport(){
     mainLogger.info('___________________________________________________________________________');
     mainLogger.info(`Host: ${args.prefix}. Start time: ${startProcessTime.toISOString()}. Finish time: ${(new Date()).toISOString()}. Options: ${args.customQueryParams}`);
-    mainLogger.info(`Percentile: ${JSON.stringify(getPercentile(numStats, true))}`);
     mainLogger.info(`Total number of requests: ${numberOfSuccessfulEvents+numberOfFailedEvents}. Number of the failed requests: ${numberOfFailedEvents}. Percent of the successful requests: ${(100 * numberOfSuccessfulEvents / (numberOfSuccessfulEvents+numberOfFailedEvents)).toFixed(2)}%.`);
     mainLogger.info(`Response time: ${JSON.stringify(getResponseTime(numStats,true))}`);
+    mainLogger.info(`Percentile: ${JSON.stringify(getPercentile(numStats, true))}`);
     if (statsMongoTime.length!==0) mainLogger.info(`Mongo response time: ${JSON.stringify(getResponseTime(statsMongoTime, false))}`);
     if (statsMongoTime.length!==0) mainLogger.info(`Mongo percentile: ${JSON.stringify(getPercentile(statsMongoTime))}`);
     if (statsClickHouseTime.length!==0) mainLogger.info(`ClickHouse response time: ${JSON.stringify(getResponseTime(statsClickHouseTime, false))}`);
