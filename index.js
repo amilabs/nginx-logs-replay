@@ -111,6 +111,8 @@ let statsEthNodeTime = new Stats();
 
 let statsClickHouseTime = new Stats();
 
+let statsPHPTime = new Stats();
+
 const deleteQuery = args.deleteQueryStats;
 const stats = {};
 
@@ -271,6 +273,7 @@ function sendRequest(method, url, sendTime, agent, originalStatus, timestamp) {
                 if (response.data.debug.mongoTxFast) statsMongoTxFastTime.push(response.data.debug.mongoTxFast);
                 if (response.data.debug.mongoTxFull) statsMongoTxFullTime.push(response.data.debug.mongoTxFull);
                 if (response.data.debug.clickhouse) statsClickHouseTime.push(response.data.debug.clickhouse);
+                if (response.data.debug.php) statsPHPTime.push(response.data.debug.php);
                 if (response.data.debug.redis){
                     if (response.data.debug.redis.read_num) statsRedisReadNumber.push(response.data.debug.redis.read_num);
                     if (response.data.debug.redis.read_time) statsRedisReadTime.push(response.data.debug.redis.read_time);
@@ -303,6 +306,7 @@ function sendRequest(method, url, sendTime, agent, originalStatus, timestamp) {
                     if (error.response.data.debug.mongoTxFull) statsMongoTxFullTime.push(error.response.data.debug.mongoTxFull);
                     if (error.response.data.debug.mongoTxFast) statsMongoTxFastTime.push(error.response.data.debug.mongoTxFast);
                     if (error.response.data.debug.clickhouse) statsClickHouseTime.push(error.response.data.debug.clickhouse);
+                    if (error.response.data.debug.php) statsPHPTime.push(error.response.data.debug.php);
                     if (error.response.data.debug.redis){
                         if (error.response.data.debug.redis.read_num) statsRedisReadNumber.push(error.response.data.debug.redis.read_num);
                         if (error.response.data.debug.redis.read_time) statsRedisReadTime.push(error.response.data.debug.redis.read_time);
@@ -346,6 +350,8 @@ function generateReport(){
     mainLogger.info(`Total number of requests: ${numberOfSuccessfulEvents+numberOfFailedEvents}. Number of the failed requests: ${numberOfFailedEvents}. Percent of the successful requests: ${(100 * numberOfSuccessfulEvents / (numberOfSuccessfulEvents+numberOfFailedEvents)).toFixed(2)}%.`);
     mainLogger.info(`Response time: ${JSON.stringify(getResponseTime(numStats,true))}`);
     mainLogger.info(`Percentile: ${JSON.stringify(getPercentile(numStats, true))}`);
+    if (statsPHPTime.length!==0) mainLogger.info(`PHP response time: ${JSON.stringify(getResponseTime(statsPHPTime, false))}`);
+    if (statsPHPTime.length!==0) mainLogger.info(`PHP percentile: ${JSON.stringify(getPercentile(statsPHPTime))}`);
     if (statsMongoTime.length!==0) mainLogger.info(`Mongo response time: ${JSON.stringify(getResponseTime(statsMongoTime, false))}`);
     if (statsMongoTime.length!==0) mainLogger.info(`Mongo percentile: ${JSON.stringify(getPercentile(statsMongoTime))}`);
     if (statsClickHouseTime.length!==0) mainLogger.info(`ClickHouse response time: ${JSON.stringify(getResponseTime(statsClickHouseTime, false))}`);
