@@ -169,6 +169,7 @@ parser.read(args.filePath, function (row) {
             agent: row.http_user_agent,
             status: row.status,
             req: row.request,
+            body: row.request_body,
             timestamp
         });
         if (args.scaleMode) {
@@ -206,7 +207,7 @@ parser.read(args.filePath, function (row) {
             stats[statsUrl] ? stats[statsUrl] += 1 : stats[statsUrl] = 1;
         }
         currentTimestamp=dataArray[i].timestamp;
-        sendRequest(requestMethod, requestUrl, now, dataArray[i].agent, dataArray[i].status, dataArray[i].timestamp);
+        sendRequest(requestMethod, requestUrl, now, dataArray[i].agent, dataArray[i].status, dataArray[i].body, dataArray[i].timestamp);
         if (!args.skipSleep && dataArray[i].timestamp !== dataArray[dataArray.length - 1].timestamp) {
             if (args.scaleMode) {
                 const timeToSleep = (Number((1000 / secondsRepeats[dataArray[i].timestamp]).toFixed(0)) +
@@ -247,7 +248,7 @@ function sleep(ms) {
     });
 }
 
-function sendRequest(method, url, sendTime, agent, originalStatus, timestamp) {
+function sendRequest(method, url, sendTime, agent, originalStatus, body, timestamp) {
     const httpsAgent = new https.Agent({
         rejectUnauthorized: !args.skipSsl
     });
@@ -256,6 +257,7 @@ function sendRequest(method, url, sendTime, agent, originalStatus, timestamp) {
     if (args.password) config.auth.password = args.password;
     if (args.timeout) config.timeout = args.timeout;
     if (agent) config.headers = {'User-Agent': agent};
+    if (body) config.data = JSON.parse(body);
     axios(config)
         .then(function (response) {
             debugLogger.info(`Response for ${url} with status code ${response.status} done with ${+new Date() - sendTime} ms`)
@@ -285,7 +287,7 @@ function sendRequest(method, url, sendTime, agent, originalStatus, timestamp) {
                     if (response.data.debug.eth_node.time) statsEthNodeTime.push(response.data.debug.eth_node.time);
                 }
             }
-            resultLogger.info(`${response.status}     ${originalStatus}     ${Moment.unix(timestamp / 1000).format(args.datesFormat)}     ${Moment.unix(sendTime / 1000).format(args.datesFormat)}     ${(responseTime / 1000).toFixed(2)}     ${url}`)
+            resultLogger.info(`${response.status}     ${originalStatus}     ${Moment.unix(timestamp / 1000).format(args.datesFormat)}     ${Moment.unix(sendTime / 1000).format(args.datesFormat)}     ${(responseTime / 1000).toFixed(2)}     ${url}     ${JSON.stringify(response.data)}`)
         })
         .catch(function (error) {
             if (!error.response) {
