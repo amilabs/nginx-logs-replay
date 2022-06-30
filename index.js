@@ -207,7 +207,15 @@ parser.read(args.filePath, function (row) {
             stats[statsUrl] ? stats[statsUrl] += 1 : stats[statsUrl] = 1;
         }
         currentTimestamp=dataArray[i].timestamp;
-        sendRequest(requestMethod, requestUrl, now, dataArray[i].agent, dataArray[i].status, dataArray[i].body, dataArray[i].timestamp);
+        
+        axios.post('http://testapi.imaginelearning.com/connect/token')
+                                .then((response) => {
+                                                       sendRequest(requestMethod, requestUrl, now, dataArray[i].agent, dataArray[i].status, dataArray[i].body, response.access_token, dataArray[i].timestamp);
+                                                    })
+                                                    .catch((error) => {
+                                                       console.error(error)
+                                                    })
+        
         if (!args.skipSleep && dataArray[i].timestamp !== dataArray[dataArray.length - 1].timestamp) {
             if (args.scaleMode) {
                 const timeToSleep = (Number((1000 / secondsRepeats[dataArray[i].timestamp]).toFixed(0)) +
@@ -248,7 +256,7 @@ function sleep(ms) {
     });
 }
 
-function sendRequest(method, url, sendTime, agent, originalStatus, body, timestamp) {
+function sendRequest(method, url, sendTime, agent, originalStatus, body, authToken, timestamp) {
     const httpsAgent = new https.Agent({
         rejectUnauthorized: !args.skipSsl
     });
@@ -258,6 +266,7 @@ function sendRequest(method, url, sendTime, agent, originalStatus, body, timesta
     if (args.timeout) config.timeout = args.timeout;
     if (agent) config.headers = {'User-Agent': agent};
     if (body) config.data = JSON.parse(body);
+    if (authToken) config.headers = {'Authorization': `bearer ${authToken}`};
     axios(config)
         .then(function (response) {
             debugLogger.info(`Response for ${url} with status code ${response.status} done with ${+new Date() - sendTime} ms`)
