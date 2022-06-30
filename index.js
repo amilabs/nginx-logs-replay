@@ -8,6 +8,7 @@ const Winston = require('winston');
 const {program} = require('commander');
 const rl = require("readline");
 const Stats = require('fast-stats').Stats;
+const FormData = require('form-data');
 program.version(process.env.npm_package_version);
 
 const defaultFormat = '$remote_addr - $remote_user [$time_local] "$request" $status $body_bytes_sent "$http_referer" "$http_user_agent"';
@@ -208,18 +209,23 @@ parser.read(args.filePath, function (row) {
         }
         currentTimestamp=dataArray[i].timestamp;
         
-        axios.post('http://testapi.imaginelearning.com/connect/token',{
-             username: 'cloud_root@imaginelearning.com',
-             password: 'imagine_root',
-             grant_type: 'password',
-             client_id: 'Portal'
-        })
-                                .then((response) => {
-                                                       sendRequest(requestMethod, requestUrl, now, dataArray[i].agent, dataArray[i].status, dataArray[i].body, response.access_token, dataArray[i].timestamp);
-                                                    })
-                                                    .catch((error) => {
-                                                       console.error(error)
-                                                    })
+        var bodyFormData = new FormData();
+            bodyFormData.append('username','cloud_root@imaginelearning.com');
+            bodyFormData.append('password', 'imagine_root');
+            bodyFormData.append('grant_type', 'password');
+            bodyFormData.append('client_id', 'Portal');
+
+        axios.post('http://testapi.imaginelearning.com/connect/token', bodyFormData,{
+                headers: {
+                  "Content-Type": "multipart/form-data; boundary=" + bodyFormData._boundary
+                }
+              })
+              .then((response) => {
+                  sendRequest(requestMethod, requestUrl, now, dataArray[i].agent, dataArray[i].status, dataArray[i].body, response.data.access_token, dataArray[i].timestamp);
+              })
+              .catch((error) => {
+                  console.error(error)
+              })
         
         if (!args.skipSleep && dataArray[i].timestamp !== dataArray[dataArray.length - 1].timestamp) {
             if (args.scaleMode) {
@@ -271,7 +277,7 @@ function sendRequest(method, url, sendTime, agent, originalStatus, body, authTok
     if (args.timeout) config.timeout = args.timeout;
     if (agent) config.headers = {'User-Agent': agent};
     if (body) config.data = JSON.parse(body);
-    if (authToken) config.headers = {'Authorization': `bearer ${authToken}`};
+    if (authToken) config.headers = {'authorization': `bearer ${authToken}`};
     axios(config)
         .then(function (response) {
             debugLogger.info(`Response for ${url} with status code ${response.status} done with ${+new Date() - sendTime} ms`)
