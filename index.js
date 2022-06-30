@@ -208,7 +208,12 @@ parser.read(args.filePath, function (row) {
         }
         currentTimestamp=dataArray[i].timestamp;
         
-        axios.post('http://testapi.imaginelearning.com/connect/token')
+        axios.post('http://testapi.imaginelearning.com/connect/token',{
+             username: 'cloud_root@imaginelearning.com',
+             password: 'imagine_root',
+             grant_type: 'password',
+             client_id: 'Portal'
+        })
                                 .then((response) => {
                                                        sendRequest(requestMethod, requestUrl, now, dataArray[i].agent, dataArray[i].status, dataArray[i].body, response.access_token, dataArray[i].timestamp);
                                                     })
