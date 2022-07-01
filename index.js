@@ -9,6 +9,12 @@ const {program} = require('commander');
 const rl = require("readline");
 const Stats = require('fast-stats').Stats;
 const FormData = require('form-data');
+
+require('dotenv').config({ path: `.env.${process.env.NODE_ENV || 'nonprod'}` });
+
+const tokenUrl = process.env.TOKEN_URL;
+const tokenUsername = process.env.TOKEN_USERNAME;
+const tokenPassword = process.env.TOKEN_PASSWORD;
 program.version(process.env.npm_package_version);
 
 const defaultFormat = '$remote_addr - $remote_user [$time_local] "$request" $status $body_bytes_sent "$http_referer" "$http_user_agent"';
@@ -210,12 +216,12 @@ parser.read(args.filePath, function (row) {
         currentTimestamp=dataArray[i].timestamp;
         
         var bodyFormData = new FormData();
-            bodyFormData.append('username','cloud_root@imaginelearning.com');
-            bodyFormData.append('password', 'imagine_root');
+            bodyFormData.append('username', tokenUsername);
+            bodyFormData.append('password', tokenPassword);
             bodyFormData.append('grant_type', 'password');
             bodyFormData.append('client_id', 'Portal');
 
-        axios.post('http://testapi.imaginelearning.com/connect/token', bodyFormData,{
+        axios.post(tokenUrl, bodyFormData,{
                 headers: {
                   "Content-Type": "multipart/form-data; boundary=" + bodyFormData._boundary
                 }
