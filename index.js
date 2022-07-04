@@ -11,7 +11,7 @@ const Stats = require('fast-stats').Stats;
 
 program.version(process.env.npm_package_version);
 
-const defaultFormat = '$remote_addr [$time_local] "$request" $status $body_bytes_sent req_body:$request_body resp_body:$resp_body req_headers:{$request_headers}';
+const defaultFormat = '$remote_addr [$time_local] "$request" $status $body_bytes_sent req_body:$request_body resp_body:$resp_body req_headers:$request_headers';
 const defaultFormatTime = 'DD/MMM/YYYY:HH:mm:ss Z';
 
 program
@@ -260,7 +260,7 @@ function sendRequest(method, url, sendTime, agent, originalStatus, body, headers
     if (args.password) config.auth.password = args.password;
     if (args.timeout) config.timeout = args.timeout;
     if (body) config.data = JSON.parse(body);
-    if (headers) config.headers = headers;
+    if (headers) config.headers = JSON.parse(headers);
     axios(config)
         .then(function (response) {
             debugLogger.info(`Response for ${url} with status code ${response.status} done with ${+new Date() - sendTime} ms`)
