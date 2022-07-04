@@ -8,16 +8,10 @@ const Winston = require('winston');
 const {program} = require('commander');
 const rl = require("readline");
 const Stats = require('fast-stats').Stats;
-const FormData = require('form-data');
 
-require('dotenv').config({ path: `.env.${process.env.NODE_ENV || 'nonprod'}` });
-
-const tokenUrl = process.env.TOKEN_URL;
-const tokenUsername = process.env.TOKEN_USERNAME;
-const tokenPassword = process.env.TOKEN_PASSWORD;
 program.version(process.env.npm_package_version);
 
-const defaultFormat = '$remote_addr - $remote_user [$time_local] "$request" $status $body_bytes_sent "$http_referer" "$http_user_agent"';
+const defaultFormat = '$remote_addr [$time_local] "$request" $status $body_bytes_sent req_body:$request_body resp_body:$resp_body req_headers:{$request_headers}';
 const defaultFormatTime = 'DD/MMM/YYYY:HH:mm:ss Z';
 
 program
@@ -177,6 +171,7 @@ parser.read(args.filePath, function (row) {
             status: row.status,
             req: row.request,
             body: row.request_body,
+            headers: row.request_headers,
             timestamp
         });
         if (args.scaleMode) {
@@ -214,24 +209,7 @@ parser.read(args.filePath, function (row) {
             stats[statsUrl] ? stats[statsUrl] += 1 : stats[statsUrl] = 1;
         }
         currentTimestamp=dataArray[i].timestamp;
-        
-        var bodyFormData = new FormData();
-            bodyFormData.append('username', tokenUsername);
-            bodyFormData.append('password', tokenPassword);
-            bodyFormData.append('grant_type', 'password');
-            bodyFormData.append('client_id', 'Portal');
-
-        axios.post(tokenUrl, bodyFormData,{
-                headers: {
-                  "Content-Type": "multipart/form-data; boundary=" + bodyFormData._boundary
-                }
-              })
-              .then((response) => {
-                  sendRequest(requestMethod, requestUrl, now, dataArray[i].agent, dataArray[i].status, dataArray[i].body, response.data.access_token, dataArray[i].timestamp);
-              })
-              .catch((error) => {
-                  console.error(error)
-              })
+        sendRequest(requestMethod, requestUrl, now, dataArray[i].agent, dataArray[i].status, dataArray[i].body, dataArray[i].headers, dataArray[i].timestamp);
         
         if (!args.skipSleep && dataArray[i].timestamp !== dataArray[dataArray.length - 1].timestamp) {
             if (args.scaleMode) {
@@ -273,7 +251,7 @@ function sleep(ms) {
     });
 }
 
-function sendRequest(method, url, sendTime, agent, originalStatus, body, authToken, timestamp) {
+function sendRequest(method, url, sendTime, agent, originalStatus, body, headers, authToken, timestamp) {
     const httpsAgent = new https.Agent({
         rejectUnauthorized: !args.skipSsl
     });
@@ -281,9 +259,8 @@ function sendRequest(method, url, sendTime, agent, originalStatus, body, authTok
     if (args.username) config.auth.username = args.username;
     if (args.password) config.auth.password = args.password;
     if (args.timeout) config.timeout = args.timeout;
-    if (agent) config.headers = {'User-Agent': agent};
     if (body) config.data = JSON.parse(body);
-    if (authToken) config.headers = {'authorization': `bearer ${authToken}`};
+    if (headers) config.headers = headers;
     axios(config)
         .then(function (response) {
             debugLogger.info(`Response for ${url} with status code ${response.status} done with ${+new Date() - sendTime} ms`)
