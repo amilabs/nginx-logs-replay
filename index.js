@@ -11,7 +11,7 @@ const Stats = require('fast-stats').Stats;
 
 program.version(process.env.npm_package_version);
 
-const defaultFormat = '$remote_addr [$time_local] "$request" $status $body_bytes_sent req_body:$request_body resp_body:$resp_body req_headers:$request_headers';
+const defaultFormat = '$remote_addr [$time_local] "$request" $status $body_bytes_sent req_time:$request_time req_body:$request_body resp_body:$resp_body req_headers:$request_headers';
 const defaultFormatTime = 'DD/MMM/YYYY:HH:mm:ss Z';
 
 program
