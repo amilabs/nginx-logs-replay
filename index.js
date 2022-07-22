@@ -261,6 +261,7 @@ function sendRequest(method, url, sendTime, agent, originalStatus, body, headers
     if (args.timeout) config.timeout = args.timeout;
     if (body) config.data = JSON.parse(body);
     if (headers) config.headers = JSON.parse(headers);
+    if (config.headers.host) delete config.headers.host;
     axios(config)
         .then(function (response) {
             debugLogger.info(`Response for ${url} with status code ${response.status} done with ${+new Date() - sendTime} ms`)
