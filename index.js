@@ -299,6 +299,7 @@ function sendRequest(method, url, sendTime, agent, originalStatus, timestamp) {
                 }
             }
             resultLogger.info(`${response.status}     ${originalStatus}     ${Moment.unix(timestamp / 1000).format(args.datesFormat)}     ${Moment.unix(sendTime / 1000).format(args.datesFormat)}     ${(responseTime / 1000).toFixed(2)}     ${url}`)
+            if (response.data.debug) debugLogger.info(JSON.stringify(response.data.debug))
         })
         .catch(function (error) {
             if (!error.response) {
