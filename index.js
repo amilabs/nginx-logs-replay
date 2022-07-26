@@ -109,6 +109,11 @@ let statsRedisWriteTime = new Stats();
 let statsEthNodeNumber = new Stats();
 let statsEthNodeTime = new Stats();
 
+let statsTxServiceDetailsNumber = new Stats();
+let statsTxServiceDetailsTime = new Stats();
+let statsTxServiceBalancesNumber = new Stats();
+let statsTxServiceBalancesTime = new Stats();
+
 let statsClickHouseTime = new Stats();
 
 let statsPHPTime = new Stats();
@@ -284,6 +289,14 @@ function sendRequest(method, url, sendTime, agent, originalStatus, timestamp) {
                     if (response.data.debug.eth_node.num) statsEthNodeNumber.push(response.data.debug.eth_node.num);
                     if (response.data.debug.eth_node.time) statsEthNodeTime.push(response.data.debug.eth_node.time);
                 }
+                if (response.data.debug.tx_service_balances){
+                    if (response.data.debug.tx_service_balances.num) statsTxServiceBalancesNumber.push(response.data.debug.tx_service_balances.num);
+                    if (response.data.debug.tx_service_balances.time) statsTxServiceBalancesTime.push(response.data.debug.tx_service_balances.time);
+                }
+                if (response.data.debug.tx_service_details){
+                    if (response.data.debug.tx_service_details.num) statsTxServiceDetailsNumber.push(response.data.debug.tx_service_details.num);
+                    if (response.data.debug.tx_service_details.time) statsTxServiceDetailsTime.push(response.data.debug.tx_service_details.time);
+                }
             }
             resultLogger.info(`${response.status}     ${originalStatus}     ${Moment.unix(timestamp / 1000).format(args.datesFormat)}     ${Moment.unix(sendTime / 1000).format(args.datesFormat)}     ${(responseTime / 1000).toFixed(2)}     ${url}`)
         })
@@ -316,6 +329,14 @@ function sendRequest(method, url, sendTime, agent, originalStatus, timestamp) {
                     if (error.response.data.debug.eth_node){
                         if (error.response.data.debug.eth_node.num) statsEthNodeNumber.push(error.response.data.debug.eth_node.num);
                         if (error.response.data.debug.eth_node.time) statsEthNodeTime.push(error.response.data.debug.eth_node.time);
+                    }
+                    if (error.response.data.debug.tx_service_balances){
+                        if (error.response.data.debug.tx_service_balances.num) statsTxServiceBalancesNumber.push(error.response.data.debug.tx_service_balances.num);
+                        if (error.response.data.debug.tx_service_balances.time) statsTxServiceBalancesTime.push(error.response.data.debug.tx_service_balances.time);
+                    }
+                    if (error.response.data.debug.tx_service_details){
+                        if (error.response.data.debug.tx_service_details.num) statsTxServiceDetailsNumber.push(error.response.data.debug.tx_service_details.num);
+                        if (error.response.data.debug.tx_service_details.time) statsTxServiceDetailsTime.push(error.response.data.debug.tx_service_details.time);
                     }
                 }
                 resultLogger.info(`${error.response.status}     ${originalStatus}     ${Moment.unix(timestamp / 1000).format(args.datesFormat)}     ${Moment.unix(sendTime / 1000).format(args.datesFormat)}     ${(responseTime / 1000).toFixed(2)}     ${url}`)
@@ -369,6 +390,15 @@ function generateReport(){
     if (statsEthNodeTime.length!==0) mainLogger.info(`Eth node time: ${JSON.stringify(getResponseTime(statsEthNodeTime, false))}`);
     if (statsEthNodeTime.length!==0) mainLogger.info(`Eth node percentile: ${JSON.stringify(getPercentile(statsEthNodeTime))}`);
     if (statsEthNodeNumber.length!==0) mainLogger.info(`Eth node count: ${JSON.stringify(getResponseTime(statsEthNodeNumber, false,0))}`);
+
+    if (statsTxServiceDetailsTime.length!==0) mainLogger.info(`TX service details time: ${JSON.stringify(getResponseTime(statsTxServiceDetailsTime, false))}`);
+    if (statsTxServiceDetailsTime.length!==0) mainLogger.info(`TX service details percentile: ${JSON.stringify(getPercentile(statsTxServiceDetailsTime))}`);
+    if (statsTxServiceDetailsNumber.length!==0) mainLogger.info(`TX service details count: ${JSON.stringify(getResponseTime(statsTxServiceDetailsNumber, false,0))}`);
+
+    if (statsTxServiceBalancesTime.length!==0) mainLogger.info(`TX service balances time: ${JSON.stringify(getResponseTime(statsTxServiceBalancesTime, false))}`);
+    if (statsTxServiceBalancesTime.length!==0) mainLogger.info(`TX service balances percentile: ${JSON.stringify(getPercentile(statsTxServiceBalancesTime))}`);
+    if (statsTxServiceBalancesNumber.length!==0) mainLogger.info(`TX service balances count: ${JSON.stringify(getResponseTime(statsTxServiceBalancesNumber, false,0))}`);
+
     mainLogger.info(`Total requests time: ${(finishTime - startTime) / 1000} seconds. Total sleep time: ${(totalSleepTime / 1000).toFixed(2)} seconds.`);
     mainLogger.info(`Original time: ${(dataArray[dataArray.length - 1].timestamp - dataArray[0].timestamp) / 1000} seconds. Original rps: ${(1000 * dataArray.length / (dataArray[dataArray.length - 1].timestamp - dataArray[0].timestamp)).toFixed(4)}. Replay rps: ${((numberOfSuccessfulEvents+numberOfFailedEvents) * 1000 / (finishTime - startTime)).toFixed(4)}. Ratio: ${args.ratio}.`);
     if (args.stats) {
