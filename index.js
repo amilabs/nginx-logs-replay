@@ -8,6 +8,7 @@ const Winston = require('winston');
 const {program} = require('commander');
 const rl = require("readline");
 const Stats = require('fast-stats').Stats;
+const _ = require('lodash');
 program.version(process.env.npm_package_version);
 
 const defaultFormat = '$remote_addr - $remote_user [$time_local] "$request" $status $body_bytes_sent "$http_referer" "$http_user_agent"';
@@ -98,29 +99,17 @@ let startTime = 0;
 let finishTime = 0;
 let totalSleepTime = 0;
 let numStats = new Stats();
-let statsMongoTime = new Stats();
-let statsMongoTxFullTime = new Stats();
-let statsMongoTxFastTime = new Stats();
-
-let statsRedisReadNumber = new Stats();
-let statsRedisReadTime = new Stats();
-let statsRedisWriteNumber = new Stats();
-let statsRedisWriteTime = new Stats();
-let statsEthNodeNumber = new Stats();
-let statsEthNodeTime = new Stats();
-
-let statsTxServiceDetailsNumber = new Stats();
-let statsTxServiceDetailsTime = new Stats();
-let statsTxServiceBalancesNumber = new Stats();
-let statsTxServiceBalancesTime = new Stats();
-
-let statsClickHouseNumber = new Stats();
-let statsClickHouseTime = new Stats();
-
-let statsPHPTime = new Stats();
 
 const deleteQuery = args.deleteQueryStats;
 const stats = {};
+
+const fieldsForMetrics = ["tx_service_details", "tx_service_balances", "eth_node", "redis.read", "redis.write", "php", "mongo", "mongoTxFast", "mongoTxFull", "mongoEthpCache"];
+const statsMetrics = {};
+fieldsForMetrics.forEach(x=>{
+    statsMetrics[x]={};
+    statsMetrics[x]["num"]=new Stats();
+    statsMetrics[x]["time"]=new Stats();
+});
 
 fs.access(args.filePath, fs.F_OK, (err) => {
     if (err) {
@@ -232,20 +221,6 @@ parser.read(args.filePath, function (row) {
     }
 });
 
-function median(values){
-    if(values.length ===0) return 0;
-
-    values.sort(function(a,b){
-        return a-b;
-    });
-
-    var half = Math.floor(values.length / 2);
-
-    if (values.length % 2)
-        return values[half];
-
-    return (values[half - 1] + values[half]) / 2.0;
-}
 
 function sleep(ms) {
     return new Promise((resolve) => {
@@ -275,33 +250,15 @@ function sendRequest(method, url, sendTime, agent, originalStatus, timestamp) {
             totalResponseTime += responseTime;
             numStats.push(responseTime);
             if (response.data.debug){
-                if (response.data.debug.mongo) statsMongoTime.push(response.data.debug.mongo);
-                if (response.data.debug.mongoTxFast) statsMongoTxFastTime.push(response.data.debug.mongoTxFast);
-                if (response.data.debug.mongoTxFull) statsMongoTxFullTime.push(response.data.debug.mongoTxFull);
-                if (response.data.debug.clickhouse){
-                    if (!response.data.debug.clickhouse.time) statsClickHouseTime.push(response.data.debug.clickhouse);
-                    if (response.data.debug.clickhouse.time) statsClickHouseTime.push(response.data.debug.clickhouse.time);
-                    if (response.data.debug.clickhouse.totalQueries) statsClickHouseNumber.push(response.data.debug.clickhouse.totalQueries);
-                }
-                if (response.data.debug.php) statsPHPTime.push(response.data.debug.php);
-                if (response.data.debug.redis){
-                    if (response.data.debug.redis.read_num) statsRedisReadNumber.push(response.data.debug.redis.read_num);
-                    if (response.data.debug.redis.read_time) statsRedisReadTime.push(response.data.debug.redis.read_time);
-                    if (response.data.debug.redis.write_num) statsRedisWriteNumber.push(response.data.debug.redis.write_num);
-                    if (response.data.debug.redis.write_time) statsRedisWriteTime.push(response.data.debug.redis.write_time);
-                }
-                if (response.data.debug.eth_node){
-                    if (response.data.debug.eth_node.num) statsEthNodeNumber.push(response.data.debug.eth_node.num);
-                    if (response.data.debug.eth_node.time) statsEthNodeTime.push(response.data.debug.eth_node.time);
-                }
-                if (response.data.debug.tx_service_balances){
-                    if (response.data.debug.tx_service_balances.num) statsTxServiceBalancesNumber.push(response.data.debug.tx_service_balances.num);
-                    if (response.data.debug.tx_service_balances.time) statsTxServiceBalancesTime.push(response.data.debug.tx_service_balances.time);
-                }
-                if (response.data.debug.tx_service_details){
-                    if (response.data.debug.tx_service_details.num) statsTxServiceDetailsNumber.push(response.data.debug.tx_service_details.num);
-                    if (response.data.debug.tx_service_details.time) statsTxServiceDetailsTime.push(response.data.debug.tx_service_details.time);
-                }
+                fieldsForMetrics.forEach(field=>{
+                    if (_.has(response.data.debug,field+".num")){
+                        statsMetrics[field]["num"].push(_.get(response.data.debug,field+".num"))
+                    }
+                    if (_.has(response.data.debug,field+".time")){
+                        statsMetrics[field]["time"].push(_.get(response.data.debug,field+".time"))
+                    }
+
+                });
             }
             resultLogger.info(`${response.status}     ${originalStatus}     ${Moment.unix(timestamp / 1000).format(args.datesFormat)}     ${Moment.unix(sendTime / 1000).format(args.datesFormat)}     ${(responseTime / 1000).toFixed(2)}     ${url}`)
             if (response.data.debug) debugLogger.info(JSON.stringify(response.data.debug))
@@ -321,31 +278,16 @@ function sendRequest(method, url, sendTime, agent, originalStatus, timestamp) {
                 totalResponseTime += responseTime;
                 numStats.push(responseTime);
                 if (error.response.data.debug){
-                    if (error.response.data.debug.mongo) statsMongoTime.push(error.response.data.debug.mongo);
-                    if (error.response.data.debug.mongoTxFull) statsMongoTxFullTime.push(error.response.data.debug.mongoTxFull);
-                    if (error.response.data.debug.mongoTxFast) statsMongoTxFastTime.push(error.response.data.debug.mongoTxFast);
-                    if (error.response.data.debug.clickhouse){
-                        if (error.response.data.debug.clickhouse.time) statsClickHouseTime.push(error.response.data.debug.clickhouse.time);
-                        if (error.response.data.debug.clickhouse.totalQueries) statsClickHouseNumber.push(error.response.data.debug.clickhouse.totalQueries);
-                    }
-                    if (error.response.data.debug.php) statsPHPTime.push(error.response.data.debug.php);
-                    if (error.response.data.debug.redis){
-                        if (error.response.data.debug.redis.read_num) statsRedisReadNumber.push(error.response.data.debug.redis.read_num);
-                        if (error.response.data.debug.redis.read_time) statsRedisReadTime.push(error.response.data.debug.redis.read_time);
-                        if (error.response.data.debug.redis.write_num) statsRedisWriteNumber.push(error.response.data.debug.redis.write_num);
-                        if (error.response.data.debug.redis.write_time) statsRedisWriteTime.push(error.response.data.debug.redis.write_time);
-                    }
-                    if (error.response.data.debug.eth_node){
-                        if (error.response.data.debug.eth_node.num) statsEthNodeNumber.push(error.response.data.debug.eth_node.num);
-                        if (error.response.data.debug.eth_node.time) statsEthNodeTime.push(error.response.data.debug.eth_node.time);
-                    }
-                    if (error.response.data.debug.tx_service_balances){
-                        if (error.response.data.debug.tx_service_balances.num) statsTxServiceBalancesNumber.push(error.response.data.debug.tx_service_balances.num);
-                        if (error.response.data.debug.tx_service_balances.time) statsTxServiceBalancesTime.push(error.response.data.debug.tx_service_balances.time);
-                    }
-                    if (error.response.data.debug.tx_service_details){
-                        if (error.response.data.debug.tx_service_details.num) statsTxServiceDetailsNumber.push(error.response.data.debug.tx_service_details.num);
-                        if (error.response.data.debug.tx_service_details.time) statsTxServiceDetailsTime.push(error.response.data.debug.tx_service_details.time);
+                    if (error.response.data.debug){
+                        fieldsForMetrics.forEach(field=>{
+                            if (_.has(error.response.data.debug,field+".num")){
+                                statsMetrics[field]["num"].push(_.get(error.response.data.debug,field+".num"))
+                            }
+                            if (_.has(error.response.data.debug,field+".time")){
+                                statsMetrics[field]["time"].push(_.get(error.response.data.debug,field+".time"))
+                            }
+
+                        });
                     }
                 }
                 resultLogger.info(`${error.response.status}     ${originalStatus}     ${Moment.unix(timestamp / 1000).format(args.datesFormat)}     ${Moment.unix(sendTime / 1000).format(args.datesFormat)}     ${(responseTime / 1000).toFixed(2)}     ${url}`)
@@ -380,34 +322,17 @@ function generateReport(){
     mainLogger.info(`Total number of requests: ${numberOfSuccessfulEvents+numberOfFailedEvents}. Number of the failed requests: ${numberOfFailedEvents}. Percent of the successful requests: ${(100 * numberOfSuccessfulEvents / (numberOfSuccessfulEvents+numberOfFailedEvents)).toFixed(2)}%.`);
     mainLogger.info(`Response time: ${JSON.stringify(getResponseTime(numStats,true))}`);
     mainLogger.info(`Percentile: ${JSON.stringify(getPercentile(numStats, true))}`);
-    if (statsPHPTime.length!==0) mainLogger.info(`PHP response time: ${JSON.stringify(getResponseTime(statsPHPTime, false))}`);
-    if (statsPHPTime.length!==0) mainLogger.info(`PHP percentile: ${JSON.stringify(getPercentile(statsPHPTime))}`);
-    if (statsMongoTime.length!==0) mainLogger.info(`Mongo response time: ${JSON.stringify(getResponseTime(statsMongoTime, false))}`);
-    if (statsMongoTime.length!==0) mainLogger.info(`Mongo percentile: ${JSON.stringify(getPercentile(statsMongoTime))}`);
-    if (statsClickHouseTime.length!==0) mainLogger.info(`ClickHouse response time: ${JSON.stringify(getResponseTime(statsClickHouseTime, false))}`);
-    if (statsClickHouseTime.length!==0) mainLogger.info(`ClickHouse percentile: ${JSON.stringify(getPercentile(statsClickHouseTime))}`);
-    if (statsClickHouseNumber.length!==0) mainLogger.info(`ClickHouse totalQueries: ${JSON.stringify(getResponseTime(statsClickHouseNumber, false,0))}`);
-    if (statsMongoTxFastTime.length!==0) mainLogger.info(`Mongo txFast response time: ${JSON.stringify(getResponseTime(statsMongoTxFastTime, false))}`);
-    if (statsMongoTxFastTime.length!==0) mainLogger.info(`Mongo txFast percentile: ${JSON.stringify(getPercentile(statsMongoTxFastTime))}`);
-    if (statsMongoTxFullTime.length!==0) mainLogger.info(`Mongo txFull response time: ${JSON.stringify(getResponseTime(statsMongoTxFullTime, false))}`);
-    if (statsMongoTxFullTime.length!==0) mainLogger.info(`Mongo txFull percentile: ${JSON.stringify(getPercentile(statsMongoTxFullTime))}`);
-    if (statsRedisReadTime.length!==0) mainLogger.info(`Redis read time: ${JSON.stringify(getResponseTime(statsRedisReadTime, false))}`);
-    if (statsRedisReadTime.length!==0) mainLogger.info(`Redis read percentile: ${JSON.stringify(getPercentile(statsRedisReadTime))}`);
-    if (statsRedisReadNumber.length!==0) mainLogger.info(`Redis read count: ${JSON.stringify(getResponseTime(statsRedisReadNumber, false,0))}`);
-    if (statsRedisWriteTime.length!==0) mainLogger.info(`Redis write time: ${JSON.stringify(getResponseTime(statsRedisWriteTime, false))}`);
-    if (statsRedisWriteTime.length!==0) mainLogger.info(`Redis write percentile: ${JSON.stringify(getPercentile(statsRedisWriteTime))}`);
-    if (statsRedisWriteNumber.length!==0) mainLogger.info(`Redis write count: ${JSON.stringify(getResponseTime(statsRedisWriteNumber, false,0))}`);
-    if (statsEthNodeTime.length!==0) mainLogger.info(`Eth node time: ${JSON.stringify(getResponseTime(statsEthNodeTime, false))}`);
-    if (statsEthNodeTime.length!==0) mainLogger.info(`Eth node percentile: ${JSON.stringify(getPercentile(statsEthNodeTime))}`);
-    if (statsEthNodeNumber.length!==0) mainLogger.info(`Eth node count: ${JSON.stringify(getResponseTime(statsEthNodeNumber, false,0))}`);
 
-    if (statsTxServiceDetailsTime.length!==0) mainLogger.info(`TX service details time: ${JSON.stringify(getResponseTime(statsTxServiceDetailsTime, false))}`);
-    if (statsTxServiceDetailsTime.length!==0) mainLogger.info(`TX service details percentile: ${JSON.stringify(getPercentile(statsTxServiceDetailsTime))}`);
-    if (statsTxServiceDetailsNumber.length!==0) mainLogger.info(`TX service details count: ${JSON.stringify(getResponseTime(statsTxServiceDetailsNumber, false,0))}`);
 
-    if (statsTxServiceBalancesTime.length!==0) mainLogger.info(`TX service balances time: ${JSON.stringify(getResponseTime(statsTxServiceBalancesTime, false))}`);
-    if (statsTxServiceBalancesTime.length!==0) mainLogger.info(`TX service balances percentile: ${JSON.stringify(getPercentile(statsTxServiceBalancesTime))}`);
-    if (statsTxServiceBalancesNumber.length!==0) mainLogger.info(`TX service balances count: ${JSON.stringify(getResponseTime(statsTxServiceBalancesNumber, false,0))}`);
+    fieldsForMetrics.forEach(field=>{
+        if (statsMetrics[field]["time"].length>0){
+            mainLogger.info(`${field} time: ${JSON.stringify(getResponseTime(statsMetrics[field]["time"], false))}`);
+            mainLogger.info(`${field} time percentile: ${JSON.stringify(getPercentile(statsMetrics[field]["time"]))}`);
+        }
+        if (statsMetrics[field]["num"].length>0){
+            mainLogger.info(`${field} number: ${JSON.stringify(getResponseTime(statsMetrics[field]["num"], false,0))}`);
+        }
+    });
 
     mainLogger.info(`Total requests time: ${(finishTime - startTime) / 1000} seconds. Total sleep time: ${(totalSleepTime / 1000).toFixed(2)} seconds.`);
     mainLogger.info(`Original time: ${(dataArray[dataArray.length - 1].timestamp - dataArray[0].timestamp) / 1000} seconds. Original rps: ${(1000 * dataArray.length / (dataArray[dataArray.length - 1].timestamp - dataArray[0].timestamp)).toFixed(4)}. Replay rps: ${((numberOfSuccessfulEvents+numberOfFailedEvents) * 1000 / (finishTime - startTime)).toFixed(4)}. Ratio: ${args.ratio}.`);
