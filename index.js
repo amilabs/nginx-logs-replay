@@ -103,7 +103,11 @@ let numStats = new Stats();
 const deleteQuery = args.deleteQueryStats;
 const stats = {};
 
-const fieldsForMetrics = ["tx_service_details", "tx_service_balances", "eth_node", "redis.read", "redis.write", "php", "mongo", "mongoTxFast", "mongoTxFull", "mongoEthpCache"];
+const fieldsForMetrics = ["php", "mongo", "clickhouse",
+    "redis.read", "redis.write",
+    "mongoTxFast", "mongoTxFull",
+    "tx_service_details", "tx_service_balances", "eth_node", "mongoEthpCache"];
+
 const statsMetrics = {};
 fieldsForMetrics.forEach(x=>{
     statsMetrics[x]={};
