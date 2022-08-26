@@ -279,6 +279,7 @@ function sendRequest(method, url, sendTime, agent, originalStatus, timestamp) {
                 if (response.data.debug.mongoTxFast) statsMongoTxFastTime.push(response.data.debug.mongoTxFast);
                 if (response.data.debug.mongoTxFull) statsMongoTxFullTime.push(response.data.debug.mongoTxFull);
                 if (response.data.debug.clickhouse){
+                    if (!response.data.debug.clickhouse.time) statsClickHouseTime.push(response.data.debug.clickhouse);
                     if (response.data.debug.clickhouse.time) statsClickHouseTime.push(response.data.debug.clickhouse.time);
                     if (response.data.debug.clickhouse.totalQueries) statsClickHouseNumber.push(response.data.debug.clickhouse.totalQueries);
                 }
