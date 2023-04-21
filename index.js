@@ -248,7 +248,7 @@ if (args.generatorMode){
         dataArray.push({
             agent: "generator",
             status: 200,
-            req: `GET ${args.generatorModePrefix}${randomString}`,
+            req: `GET ${randomString}`,
             timestamp
         });
     }
