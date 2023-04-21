@@ -15,8 +15,8 @@ const defaultFormat = '$remote_addr - $remote_user [$time_local] "$request" $sta
 const defaultFormatTime = 'DD/MMM/YYYY:HH:mm:ss Z';
 
 program
-    .requiredOption('-f, --filePath <path>', 'path of the nginx logs file')
     .requiredOption('-p, --prefix <url>', 'url for sending requests')
+    .option('-f, --filePath <path>', 'path of the nginx logs file')
     .option('-r, --ratio <number>', 'acceleration / deceleration rate of sending requests, eg: 2, 0.5', '1')
     .option('--format <string>', 'format of the nginx log', defaultFormat)
     .option('--formatTime <string>', 'format of the nginx time', defaultFormatTime)
@@ -27,6 +27,12 @@ program
     .option('--username <string>', 'username for basic auth')
     .option('--password <string>', 'password  for basic auth')
     .option('--scaleMode', 'experimental mode for the changing requests order', false)
+    .option('--generatorMode', 'node without reading nginx logs but generating it automatically', false)
+    .option('--generatorModeRPS <number>', 'mode without reading nginx logs but generating it automatically', 1)
+    .option('--generatorModeAlphabet <string>', 'alphabet for the generator mode', "ABC")
+    .option('--generatorModeMinLength <number>', 'generator mode min string length', 1)
+    .option('--generatorModeMaxLength <number>', 'generator mode max string length', 1)
+    .option('--generatorModeNumberOfRequests <number>', 'generator mode number of requests', 1)
     .option('--skipSleep', 'remove pauses between requests. Attention: will ddos your server', false)
     .option('--skipSsl', 'skip ssl errors', false)
     .option('--datesFormat <string>', 'format of dates to display in logs (regarding Moment.js parsing format)', "DD-MM-YYYY:HH:mm:ss")
@@ -44,7 +50,6 @@ Object.entries(args).forEach(arg => {
     if (typeof arg[1] === "string" && arg[1].startsWith('=')) args[arg[0]] = arg[1].replace('=', '');
 })
 
-const parser = new NginxParser(args.format);
 const debugLogger = Winston.createLogger({
     format: Winston.format.simple(),
     silent: !args.debug,
@@ -115,12 +120,14 @@ fieldsForMetrics.forEach(x=>{
     statsMetrics[x]["time"]=new Stats();
 });
 
-fs.access(args.filePath, fs.F_OK, (err) => {
-    if (err) {
-        mainLogger.error(`Cannot find file ${args.filePath}`);
-        process.exit(1);
-    }
-});
+if (!args.generatorMode){
+    fs.access(args.filePath, fs.F_OK, (err) => {
+        if (err) {
+            mainLogger.error(`Cannot find file ${args.filePath}`);
+            process.exit(1);
+        }
+    });
+}
 
 if (args.logFile) {
     if (args.logFile === args.filePath) {
@@ -153,7 +160,9 @@ process.on("SIGINT", () => {
 
 args.startTimestamp = args.startTimestamp.length>10? args.startTimestamp: args.startTimestamp*1000;
 const startProcessTime = new Date();
-parser.read(args.filePath, function (row) {
+const parser = new NginxParser(args.format);
+
+function parseRow(row){
     const timestamp = Moment(row.time_local, args.formatTime).unix() * 1000;
     let isFilterSkip = false;
     args.filterSkip.forEach(filter => {
@@ -174,8 +183,9 @@ parser.read(args.filePath, function (row) {
             secondsRepeats[timestamp] ? secondsRepeats[timestamp] += 1 : secondsRepeats[timestamp] = 1;
         }
     }
-}, async function (err) {
-    if (err) throw err;
+}
+
+async function replay(){
     startTime = +new Date();
     if (dataArray.length===0) mainLogger.info(`No logs for the replaying`);
     for (let i = 0; i < dataArray.length; i++) {
@@ -191,7 +201,7 @@ parser.read(args.filePath, function (row) {
             });
             requestUrl = requestUrl.toString().replace(args.prefix, "");
         }else{
-            requestUrl = dataArray[i].req.split(" ")[1];
+            requestUrl = new URL(args.prefix + dataArray[i].req.split(" ")[1]);
         }
         debugLogger.info(`Sending ${requestMethod} request to ${requestUrl} at ${now}`);
         if (args.stats) {
@@ -223,8 +233,37 @@ parser.read(args.filePath, function (row) {
             }
         }
     }
-});
 
+}
+if (args.generatorMode){
+    const startTimestamp = +new Date();
+    const alphabet = args.generatorModeAlphabet.split("")
+    for (let i = 0; i < args.generatorModeNumberOfRequests; i++) {
+        const timestamp = startTimestamp + 1000*i/args.generatorModeRPS;
+        const randomInt = between(Number(args.generatorModeMinLength), Number(args.generatorModeMaxLength))
+        let randomString = '';
+        for (let i = 0; i < randomInt; i++) {
+            randomString+=alphabet[Math.floor(Math.random()*alphabet.length)];
+        }
+        dataArray.push({
+            agent: "generator",
+            status: 200,
+            req: `GET ${args.generatorModePrefix}${randomString}`,
+            timestamp
+        });
+    }
+    (async () => {
+        await replay();
+    })();
+
+}else{
+    parser.read(args.filePath, function (row) {
+        parseRow(row)
+    }, async function (err) {
+        if (err) throw err;
+        await replay();
+    });
+}
 
 function sleep(ms) {
     return new Promise((resolve) => {
@@ -354,4 +393,8 @@ function generateReport(){
         });
         if (Object.keys(hiddenStats) > 0) mainLogger.info(`Hidden stats: ${JSON.stringify(hiddenStats)}`);
     }
+}
+
+function between(min, max) {
+    return Math.floor(Math.random() * (max-min) + min) + 1;
 }
