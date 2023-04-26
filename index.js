@@ -99,6 +99,7 @@ const resultLogger = Winston.createLogger({
 const dataArray = [];
 let numberOfSuccessfulEvents = 0;
 let numberOfFailedEvents = 0;
+let numberOfNotEmptyResponses = 0;
 let totalResponseTime = 0;
 let startTime = 0;
 let finishTime = 0;
@@ -168,7 +169,7 @@ function parseRow(row){
     args.filterSkip.forEach(filter => {
         if (row.request.includes(filter)) isFilterSkip = true;
     });
-    let isFilterOnly = args.filterOnly.length === 0? true:false;
+    let isFilterOnly = args.filterOnly.length === 0;
     args.filterOnly.forEach(filter => {
         if (row.request.includes(filter)) isFilterOnly = true;
     });
@@ -201,7 +202,7 @@ async function replay(){
             });
             requestUrl = requestUrl.toString().replace(args.prefix, "");
         }else{
-            requestUrl = new URL(args.prefix + dataArray[i].req.split(" ")[1]);
+            requestUrl = dataArray[i].req.split(" ")[1];
         }
         debugLogger.info(`Sending ${requestMethod} request to ${requestUrl} at ${now}`);
         if (args.stats) {
@@ -247,7 +248,7 @@ if (args.generatorMode){
         }
         dataArray.push({
             agent: "generator",
-            status: 200,
+            status: "200",
             req: `GET ${randomString}`,
             timestamp
         });
@@ -289,6 +290,7 @@ function sendRequest(method, url, sendTime, agent, originalStatus, timestamp) {
             } else {
                 numberOfSuccessfulEvents += 1;
             }
+            if (response.data && response.data.results && response.data.results.length>0) numberOfNotEmptyResponses+=1;
             let responseTime = +new Date() - sendTime;
             totalResponseTime += responseTime;
             numStats.push(responseTime);
@@ -363,6 +365,7 @@ function generateReport(){
     mainLogger.info('___________________________________________________________________________');
     mainLogger.info(`Host: ${args.prefix}. Start time: ${startProcessTime.toISOString()}. Finish time: ${(new Date()).toISOString()}. Options: ${args.customQueryParams}`);
     mainLogger.info(`Total number of requests: ${numberOfSuccessfulEvents+numberOfFailedEvents}. Number of the failed requests: ${numberOfFailedEvents}. Percent of the successful requests: ${(100 * numberOfSuccessfulEvents / (numberOfSuccessfulEvents+numberOfFailedEvents)).toFixed(2)}%.`);
+    mainLogger.info(`Number of not empty responses: ${numberOfNotEmptyResponses}. Percent of not empty responses: ${(100 * numberOfNotEmptyResponses / (numberOfSuccessfulEvents+numberOfFailedEvents)).toFixed(2)}%.`);
     mainLogger.info(`Response time: ${JSON.stringify(getResponseTime(numStats,true))}`);
     mainLogger.info(`Percentile: ${JSON.stringify(getPercentile(numStats, true))}`);
 
