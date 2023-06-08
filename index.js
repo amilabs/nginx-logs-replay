@@ -112,7 +112,7 @@ const stats = {};
 const fieldsForMetrics = ["php", "mongo", "clickhouse",
     "redis.read", "redis.write",
     "mongoTxFast", "mongoTxFull",
-    "tx_service_details", "tx_service_balances", "eth_node", "mongoEthpCache", "manticore"];
+    "tx_service_details", "tx_service_balances", "eth_node", "mongoEthpCache", "manticore", "postgresql"];
 
 const statsMetrics = {};
 fieldsForMetrics.forEach(x=>{
