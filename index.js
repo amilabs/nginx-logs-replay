@@ -109,18 +109,7 @@ let numStats = new Stats();
 const deleteQuery = args.deleteQueryStats;
 const stats = {};
 
-const fieldsForMetrics = ["php", "mongo", "clickhouse",
-    "redis.read", "redis.write",
-    "mongoTxFast", "mongoTxFull",
-    "tx_service_details", "tx_service_balances", "eth_node", "mongoEthpCache", "manticore", "postgresql"];
-
 const statsMetrics = {};
-fieldsForMetrics.forEach(x=>{
-    statsMetrics[x]={};
-    statsMetrics[x]["num"]=new Stats();
-    statsMetrics[x]["time"]=new Stats();
-});
-
 if (!args.generatorMode){
     fs.access(args.filePath, fs.F_OK, (err) => {
         if (err) {
@@ -283,65 +272,58 @@ function sendRequest(method, url, sendTime, agent, originalStatus, timestamp) {
     if (agent) config.headers = {'User-Agent': agent};
     axios(config)
         .then(function (response) {
-            debugLogger.info(`Response for ${url} with status code ${response.status} done with ${+new Date() - sendTime} ms`)
-            if (originalStatus !== response.status.toString()) {
-                debugLogger.info(`Response for ${url} has different status code: ${response.status} and ${originalStatus}`);
-                numberOfFailedEvents += 1;
-            } else {
-                numberOfSuccessfulEvents += 1;
-            }
-            if (response.data && response.data.results && response.data.results.length>0) numberOfNotEmptyResponses+=1;
-            let responseTime = +new Date() - sendTime;
-            totalResponseTime += responseTime;
-            numStats.push(responseTime);
-            if (response.data.debug){
-                fieldsForMetrics.forEach(field=>{
-                    if (_.has(response.data.debug,field+".num")){
-                        statsMetrics[field]["num"].push(_.get(response.data.debug,field+".num"))
-                    }
-                    if (_.has(response.data.debug,field+".time")){
-                        statsMetrics[field]["time"].push(_.get(response.data.debug,field+".time"))
-                    }
-
-                });
-            }
-            resultLogger.info(`${response.status}     ${originalStatus}     ${Moment.unix(timestamp / 1000).format(args.datesFormat)}     ${Moment.unix(sendTime / 1000).format(args.datesFormat)}     ${(responseTime / 1000).toFixed(2)}     ${url}`)
-            if (response.data.debug) debugLogger.info(JSON.stringify(response.data.debug))
+            debugLogger.info(`Response for ${url} with status code ${response.status} done with ${+new Date() - sendTime} ms`);
+            parseResponse(response, method, url, sendTime, agent, originalStatus, timestamp);
         })
         .catch(function (error) {
             if (!error.response) {
                 mainLogger.error(`Invalid request to ${url} : ${error}`)
                 numberOfFailedEvents += 1;
             } else {
-                if (originalStatus !== error.response.status.toString()) {
-                    debugLogger.info(`Response for ${url} has different status code: ${error.response.status} and ${originalStatus}`);
-                    numberOfFailedEvents += 1;
-                } else {
-                    numberOfSuccessfulEvents += 1;
-                }
-                let responseTime = +new Date() - sendTime;
-                totalResponseTime += responseTime;
-                numStats.push(responseTime);
-                if (error.response.data.debug){
-                    if (error.response.data.debug){
-                        fieldsForMetrics.forEach(field=>{
-                            if (_.has(error.response.data.debug,field+".num")){
-                                statsMetrics[field]["num"].push(_.get(error.response.data.debug,field+".num"))
-                            }
-                            if (_.has(error.response.data.debug,field+".time")){
-                                statsMetrics[field]["time"].push(_.get(error.response.data.debug,field+".time"))
-                            }
-
-                        });
-                    }
-                }
-                resultLogger.info(`${error.response.status}     ${originalStatus}     ${Moment.unix(timestamp / 1000).format(args.datesFormat)}     ${Moment.unix(sendTime / 1000).format(args.datesFormat)}     ${(responseTime / 1000).toFixed(2)}     ${url}`)
+                parseResponse(error.response, method, url, sendTime, agent, originalStatus, timestamp);
             }
         }).then(function () {
         if (numberOfFailedEvents + numberOfSuccessfulEvents === dataArray.length) {
             generateReport();
         }
     });
+}
+
+function parseResponse(response, method, url, sendTime, agent, originalStatus, timestamp){
+    if (originalStatus !== response.status.toString()) {
+        debugLogger.info(`Response for ${url} has different status code: ${response.status} and ${originalStatus}`);
+        numberOfFailedEvents += 1;
+    } else {
+        numberOfSuccessfulEvents += 1;
+    }
+    if (response.data && response.data.results && response.data.results.length>0) numberOfNotEmptyResponses+=1;
+    let responseTime = +new Date() - sendTime;
+    totalResponseTime += responseTime;
+    numStats.push(responseTime);
+    if (response.data.debug){
+        for (const [field, fieldValue] of Object.entries(response.data.debug)){
+            if (statsMetrics[field]===undefined){
+                statsMetrics[field]={num: new Stats(), time: new Stats()};
+            }
+            if (fieldValue["num"]!==undefined){
+                statsMetrics[field]["num"].push(fieldValue["num"]);
+            }
+            if (fieldValue["time"]!==undefined){
+                statsMetrics[field]["time"].push(fieldValue["time"]);
+            }
+            if (fieldValue["queries"]){
+                for (const [subField, subValue] of Object.entries(response.data.debug[field]["queries"])){
+                    if (statsMetrics[field+"."+subField]===undefined){
+                        statsMetrics[field+"."+subField] = {};
+                        statsMetrics[field+"."+subField]={time: new Stats()};
+                    }
+                    statsMetrics[field+"."+subField]["time"].push(subValue)
+                }
+            }
+        }
+    }
+    resultLogger.info(`${response.status}     ${originalStatus}     ${Moment.unix(timestamp / 1000).format(args.datesFormat)}     ${Moment.unix(sendTime / 1000).format(args.datesFormat)}     ${(responseTime / 1000).toFixed(2)}     ${url}`)
+    if (response.data.debug) debugLogger.info(JSON.stringify(response.data.debug));
 }
 
 function getPercentile(stat, toSeconds=false){
@@ -369,13 +351,12 @@ function generateReport(){
     mainLogger.info(`Response time: ${JSON.stringify(getResponseTime(numStats,true))}`);
     mainLogger.info(`Percentile: ${JSON.stringify(getPercentile(numStats, true))}`);
 
-
-    fieldsForMetrics.forEach(field=>{
-        if (statsMetrics[field]["time"].length>0){
+    Object.keys(statsMetrics).forEach(field=>{
+        if (statsMetrics[field]["time"].length>0 && statsMetrics[field]["time"].length!==statsMetrics[field]["time"].zeroes){
             mainLogger.info(`${field} time: ${JSON.stringify(getResponseTime(statsMetrics[field]["time"], false))}`);
             mainLogger.info(`${field} time percentile: ${JSON.stringify(getPercentile(statsMetrics[field]["time"]))}`);
         }
-        if (statsMetrics[field]["num"].length>0){
+        if (statsMetrics[field]["num"]&&statsMetrics[field]["num"].length>0 && statsMetrics[field]["num"].length!==statsMetrics[field]["num"].zeroes){
             mainLogger.info(`${field} number: ${JSON.stringify(getResponseTime(statsMetrics[field]["num"], false,0))}`);
         }
     });
