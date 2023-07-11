@@ -305,19 +305,21 @@ function parseResponse(response, method, url, sendTime, agent, originalStatus, t
             if (statsMetrics[field]===undefined){
                 statsMetrics[field]={num: new Stats(), time: new Stats()};
             }
-            if (fieldValue["num"]!==undefined){
-                statsMetrics[field]["num"].push(fieldValue["num"]);
-            }
-            if (fieldValue["time"]!==undefined){
-                statsMetrics[field]["time"].push(fieldValue["time"]);
-            }
-            if (fieldValue["queries"]){
-                for (const [subField, subValue] of Object.entries(response.data.debug[field]["queries"])){
-                    if (statsMetrics[field+"."+subField]===undefined){
-                        statsMetrics[field+"."+subField] = {};
-                        statsMetrics[field+"."+subField]={time: new Stats()};
+            if (fieldValue){
+                if (fieldValue["num"]!==undefined){
+                    statsMetrics[field]["num"].push(fieldValue["num"]);
+                }
+                if (fieldValue["time"]!==undefined){
+                    statsMetrics[field]["time"].push(fieldValue["time"]);
+                }
+                if (fieldValue["queries"]){
+                    for (const [subField, subValue] of Object.entries(response.data.debug[field]["queries"])){
+                        if (statsMetrics[field+"."+subField]===undefined){
+                            statsMetrics[field+"."+subField] = {};
+                            statsMetrics[field+"."+subField]={time: new Stats()};
+                        }
+                        statsMetrics[field+"."+subField]["time"].push(subValue)
                     }
-                    statsMetrics[field+"."+subField]["time"].push(subValue)
                 }
             }
         }
