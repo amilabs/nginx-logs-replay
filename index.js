@@ -229,17 +229,15 @@ if (args.generatorMode){
     const startTimestamp = +new Date();
     const alphabet = args.generatorModeAlphabet.split("")
     for (let i = 0; i < args.generatorModeNumberOfRequests; i++) {
-        const timestamp = startTimestamp + 1000*i/args.generatorModeRPS;
-        const randomInt = between(Number(args.generatorModeMinLength), Number(args.generatorModeMaxLength))
         let randomString = '';
-        for (let i = 0; i < randomInt; i++) {
+        for (let i = 0; i < _.random(Number(args.generatorModeMinLength), Number(args.generatorModeMaxLength)); i++) {
             randomString+=alphabet[Math.floor(Math.random()*alphabet.length)];
         }
         dataArray.push({
             agent: "generator",
             status: "200",
             req: `GET ${randomString}`,
-            timestamp
+            timestamp: startTimestamp + 1000*i/args.generatorModeRPS
         });
     }
     (async () => {
@@ -301,28 +299,42 @@ function parseResponse(response, method, url, sendTime, agent, originalStatus, t
     totalResponseTime += responseTime;
     numStats.push(responseTime);
     if (response.data.debug){
-        for (const [field, fieldValue] of Object.entries(response.data.debug)){
-            if (statsMetrics[field]===undefined){
-                statsMetrics[field]={num: new Stats(), time: new Stats()};
+        function parseObject(object, name){
+            function setField(name, field, value, type){
+                const distName = name===undefined?field:name+"."+field;
+                if (statsMetrics[distName]===undefined){
+                    statsMetrics[distName]={}
+                }
+                if (statsMetrics[distName][type]===undefined){
+                    statsMetrics[distName][type]=new Stats();
+                }
+                statsMetrics[distName][type].push(value);
             }
-            if (fieldValue){
-                if (fieldValue["num"]!==undefined){
-                    statsMetrics[field]["num"].push(fieldValue["num"]);
-                }
-                if (fieldValue["time"]!==undefined){
-                    statsMetrics[field]["time"].push(fieldValue["time"]);
-                }
-                if (fieldValue["queries"]){
-                    for (const [subField, subValue] of Object.entries(response.data.debug[field]["queries"])){
-                        if (statsMetrics[field+"."+subField]===undefined){
-                            statsMetrics[field+"."+subField] = {};
-                            statsMetrics[field+"."+subField]={time: new Stats()};
+            for (const [field, fieldValue] of Object.entries(object)){
+                if (fieldValue){
+                    if (typeof fieldValue==="object"){
+                        if (_.has(fieldValue, "queries") || _.has(fieldValue, "num") || _.has(fieldValue, "time")){
+                            if (_.has(fieldValue, "num")) setField(name, field, fieldValue["num"], "num")
+                            if (_.has(fieldValue, "time")) setField(name, field, fieldValue["time"], "time")
+                            if (_.has(fieldValue, "queries")){
+                                for (const [subField, subValue] of Object.entries(fieldValue["queries"])){
+                                    setField(name, field+"."+subField, subValue, "time");
+                                }
+                            }
+                        } else if(_.has(fieldValue, "usage")){
+                            setField(name, field, fieldValue["usage"], "usage")
+                            setField(name, field, fieldValue["peak"], "peak")
+                        }else{
+                            parseObject(fieldValue, name===undefined?field:name+"."+field);
                         }
-                        statsMetrics[field+"."+subField]["time"].push(subValue)
+
+                    }else if (typeof fieldValue === 'number'){
+                        setField(name, field, fieldValue, "time");
                     }
                 }
             }
         }
+        parseObject(response.data.debug)
     }
     resultLogger.info(`${response.status}     ${originalStatus}     ${Moment.unix(timestamp / 1000).format(args.datesFormat)}     ${Moment.unix(sendTime / 1000).format(args.datesFormat)}     ${(responseTime / 1000).toFixed(2)}     ${url}`)
     if (response.data.debug) debugLogger.info(JSON.stringify(response.data.debug));
@@ -352,13 +364,12 @@ function generateReport(){
     mainLogger.info(`Number of not empty responses: ${numberOfNotEmptyResponses}. Percent of not empty responses: ${(100 * numberOfNotEmptyResponses / (numberOfSuccessfulEvents+numberOfFailedEvents)).toFixed(2)}%.`);
     mainLogger.info(`Response time: ${JSON.stringify(getResponseTime(numStats,true))}`);
     mainLogger.info(`Percentile: ${JSON.stringify(getPercentile(numStats, true))}`);
-
     Object.keys(statsMetrics).forEach(field=>{
-        if (statsMetrics[field]["time"].length>0 && statsMetrics[field]["time"].length!==statsMetrics[field]["time"].zeroes){
+        if (statsMetrics[field]["time"] && statsMetrics[field]["time"].length!==statsMetrics[field]["time"].zeroes){
             mainLogger.info(`${field} time: ${JSON.stringify(getResponseTime(statsMetrics[field]["time"], false))}`);
             mainLogger.info(`${field} time percentile: ${JSON.stringify(getPercentile(statsMetrics[field]["time"]))}`);
         }
-        if (statsMetrics[field]["num"]&&statsMetrics[field]["num"].length>0 && statsMetrics[field]["num"].length!==statsMetrics[field]["num"].zeroes){
+        if (statsMetrics[field]["num"] && statsMetrics[field]["num"].length>0 && statsMetrics[field]["num"].length!==statsMetrics[field]["num"].zeroes){
             mainLogger.info(`${field} number: ${JSON.stringify(getResponseTime(statsMetrics[field]["num"], false,0))}`);
         }
     });
@@ -379,8 +390,4 @@ function generateReport(){
         });
         if (Object.keys(hiddenStats) > 0) mainLogger.info(`Hidden stats: ${JSON.stringify(hiddenStats)}`);
     }
-}
-
-function between(min, max) {
-    return Math.floor(Math.random() * (max-min) + min) + 1;
 }
