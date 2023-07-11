@@ -268,7 +268,7 @@ function sendRequest(method, url, sendTime, agent, originalStatus, timestamp) {
     let config = {httpsAgent, method, url: args.prefix + url, auth:{}};
     if (args.username) config.auth.username = args.username;
     if (args.password) config.auth.password = args.password;
-    if (args.timeout) config.timeout = args.timeout;
+    if (args.timeout) config.timeout = parseInt(args.timeout);
     if (agent) config.headers = {'User-Agent': agent};
     axios(config)
         .then(function (response) {
