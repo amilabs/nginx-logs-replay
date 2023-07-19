@@ -10,7 +10,7 @@ const rl = require("readline");
 const Stats = require('fast-stats').Stats;
 const _ = require('lodash');
 program.version(process.env.npm_package_version);
-
+const zeroPad = (num, places) => String(num).padStart(places, '0')
 const defaultFormat = '$remote_addr - $remote_user [$time_local] "$request" $status $body_bytes_sent "$http_referer" "$http_user_agent"';
 const defaultFormatTime = 'DD/MMM/YYYY:HH:mm:ss Z';
 
@@ -341,7 +341,7 @@ function parseResponse(response, method, url, sendTime, agent, originalStatus, t
             parseObject(response.data.debug)
         }
         if (responseTime>Number(args.responseTimeLimit)*1000){
-            resultLogger.info(`${args.showCounters?`${numberOfFailedEvents+numberOfSuccessfulEvents}/${dataArray.length}     `:""}${response.status}     ${originalStatus}     ${Moment.unix(timestamp / 1000).format(args.datesFormat)}     ${Moment.unix(sendTime / 1000).format(args.datesFormat)}     ${(responseTime / 1000).toFixed(2)}${(args.showSearchDebug && response.data.debug && response.data.debug.search && response.data.debug.search.search)?`     [${response.data.debug.search.search.length}]     ${response.data.debug.search.search}`:''}     ${decodeURI(url)}     ${url}`)
+            resultLogger.info(`${args.showCounters?`${zeroPad(numberOfFailedEvents+numberOfSuccessfulEvents, dataArray.length.toString().length)}/${dataArray.length}     `:""}${response.status}     ${originalStatus}     ${Moment.unix(timestamp / 1000).format(args.datesFormat)}     ${Moment.unix(sendTime / 1000).format(args.datesFormat)}     ${(responseTime / 1000).toFixed(2)}${(args.showSearchDebug && response.data.debug && response.data.debug.search && response.data.debug.search.search)?`     [${response.data.debug.search.search.length}]     ${response.data.debug.search.search}`:''}     ${decodeURI(url)}     ${url}`)
         }else{
             numberOfSkippedEventsBecauseOfResponseTimeLimit+=1;
         }
