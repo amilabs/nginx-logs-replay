@@ -33,6 +33,7 @@ program
     .option('--generatorModeMinLength <number>', 'generator mode min string length', 1)
     .option('--generatorModeMaxLength <number>', 'generator mode max string length', 1)
     .option('--generatorModeNumberOfRequests <number>', 'generator mode number of requests', 1)
+    .option('--responseTimeLimit <number>', 'calculating only responses with response time which greater than this option', 0)
     .option('--skipSleep', 'remove pauses between requests. Attention: will ddos your server', false)
     .option('--skipSsl', 'skip ssl errors', false)
     .option('--datesFormat <string>', 'format of dates to display in logs (regarding Moment.js parsing format)', "DD-MM-YYYY:HH:mm:ss")
@@ -100,6 +101,7 @@ const dataArray = [];
 let numberOfSuccessfulEvents = 0;
 let numberOfFailedEvents = 0;
 let numberOfNotEmptyResponses = 0;
+let numberOfSkippedEventsBecauseOfResponseTimeLimit = 0;
 let totalResponseTime = 0;
 let startTime = 0;
 let finishTime = 0;
@@ -288,56 +290,60 @@ function sendRequest(method, url, sendTime, agent, originalStatus, timestamp) {
 }
 
 function parseResponse(response, method, url, sendTime, agent, originalStatus, timestamp){
-    if (originalStatus !== response.status.toString()) {
-        debugLogger.info(`Response for ${url} has different status code: ${response.status} and ${originalStatus}`);
-        numberOfFailedEvents += 1;
-    } else {
-        numberOfSuccessfulEvents += 1;
-    }
-    if (response.data && response.data.results && response.data.results.length>0) numberOfNotEmptyResponses+=1;
-    let responseTime = +new Date() - sendTime;
-    totalResponseTime += responseTime;
-    numStats.push(responseTime);
-    if (response.data.debug){
-        function parseObject(object, name){
-            function setField(name, field, value, type){
-                const distName = name===undefined?field:name+"."+field;
-                if (statsMetrics[distName]===undefined){
-                    statsMetrics[distName]={}
+    const responseTime = +new Date() - sendTime;
+    if (responseTime>Number(args.responseTimeLimit)*1000){
+        if (originalStatus !== response.status.toString()) {
+            debugLogger.info(`Response for ${url} has different status code: ${response.status} and ${originalStatus}`);
+            numberOfFailedEvents += 1;
+        } else {
+            numberOfSuccessfulEvents += 1;
+        }
+        if (response.data && response.data.results && response.data.results.length>0) numberOfNotEmptyResponses+=1;
+        totalResponseTime += responseTime;
+        numStats.push(responseTime);
+        if (response.data.debug){
+            function parseObject(object, name){
+                function setField(name, field, value, type){
+                    const distName = name===undefined?field:name+"."+field;
+                    if (statsMetrics[distName]===undefined){
+                        statsMetrics[distName]={}
+                    }
+                    if (statsMetrics[distName][type]===undefined){
+                        statsMetrics[distName][type]=new Stats();
+                    }
+                    statsMetrics[distName][type].push(value);
                 }
-                if (statsMetrics[distName][type]===undefined){
-                    statsMetrics[distName][type]=new Stats();
-                }
-                statsMetrics[distName][type].push(value);
-            }
-            for (const [field, fieldValue] of Object.entries(object)){
-                if (fieldValue){
-                    if (typeof fieldValue==="object"){
-                        if (_.has(fieldValue, "queries") || _.has(fieldValue, "num") || _.has(fieldValue, "time")){
-                            if (_.has(fieldValue, "num")) setField(name, field, fieldValue["num"], "num")
-                            if (_.has(fieldValue, "time")) setField(name, field, fieldValue["time"], "time")
-                            if (_.has(fieldValue, "queries")){
-                                for (const [subField, subValue] of Object.entries(fieldValue["queries"])){
-                                    setField(name, field+"."+subField, subValue, "time");
+                for (const [field, fieldValue] of Object.entries(object)){
+                    if (fieldValue){
+                        if (typeof fieldValue==="object"){
+                            if (_.has(fieldValue, "queries") || _.has(fieldValue, "num") || _.has(fieldValue, "time")){
+                                if (_.has(fieldValue, "num")) setField(name, field, fieldValue["num"], "num")
+                                if (_.has(fieldValue, "time")) setField(name, field, fieldValue["time"], "time")
+                                if (_.has(fieldValue, "queries")){
+                                    for (const [subField, subValue] of Object.entries(fieldValue["queries"])){
+                                        setField(name, field+"."+subField, subValue, "time");
+                                    }
                                 }
+                            } else if(_.has(fieldValue, "usage")){
+                                setField(name, field, fieldValue["usage"], "usage")
+                                setField(name, field, fieldValue["peak"], "peak")
+                            }else{
+                                parseObject(fieldValue, name===undefined?field:name+"."+field);
                             }
-                        } else if(_.has(fieldValue, "usage")){
-                            setField(name, field, fieldValue["usage"], "usage")
-                            setField(name, field, fieldValue["peak"], "peak")
-                        }else{
-                            parseObject(fieldValue, name===undefined?field:name+"."+field);
-                        }
 
-                    }else if (typeof fieldValue === 'number'){
-                        setField(name, field, fieldValue, "time");
+                        }else if (typeof fieldValue === 'number'){
+                            setField(name, field, fieldValue, "time");
+                        }
                     }
                 }
             }
+            parseObject(response.data.debug)
         }
-        parseObject(response.data.debug)
+        resultLogger.info(`${response.status}     ${originalStatus}     ${Moment.unix(timestamp / 1000).format(args.datesFormat)}     ${Moment.unix(sendTime / 1000).format(args.datesFormat)}     ${(responseTime / 1000).toFixed(2)}     ${decodeURI(url)}`)
+        if (response.data.debug) debugLogger.info(JSON.stringify(response.data.debug));
+    }else{
+        numberOfSkippedEventsBecauseOfResponseTimeLimit+=1;
     }
-    resultLogger.info(`${response.status}     ${originalStatus}     ${Moment.unix(timestamp / 1000).format(args.datesFormat)}     ${Moment.unix(sendTime / 1000).format(args.datesFormat)}     ${(responseTime / 1000).toFixed(2)}     ${url}`)
-    if (response.data.debug) debugLogger.info(JSON.stringify(response.data.debug));
 }
 
 function getPercentile(stat, toSeconds=false){
@@ -362,6 +368,7 @@ function generateReport(){
     mainLogger.info(`Host: ${args.prefix}. Start time: ${startProcessTime.toISOString()}. Finish time: ${(new Date()).toISOString()}. Options: ${args.customQueryParams}`);
     mainLogger.info(`Total number of requests: ${numberOfSuccessfulEvents+numberOfFailedEvents}. Number of the failed requests: ${numberOfFailedEvents}. Percent of the successful requests: ${(100 * numberOfSuccessfulEvents / (numberOfSuccessfulEvents+numberOfFailedEvents)).toFixed(2)}%.`);
     mainLogger.info(`Number of not empty responses: ${numberOfNotEmptyResponses}. Percent of not empty responses: ${(100 * numberOfNotEmptyResponses / (numberOfSuccessfulEvents+numberOfFailedEvents)).toFixed(2)}%.`);
+    if (Number(args.responseTimeLimit)>0)mainLogger.info(`Number of skipped responses because of response time limit: ${numberOfSkippedEventsBecauseOfResponseTimeLimit}.`);
     mainLogger.info(`Response time: ${JSON.stringify(getResponseTime(numStats,true))}`);
     mainLogger.info(`Percentile: ${JSON.stringify(getPercentile(numStats, true))}`);
     Object.keys(statsMetrics).forEach(field=>{
