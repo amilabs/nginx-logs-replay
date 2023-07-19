@@ -36,6 +36,8 @@ program
     .option('--responseTimeLimit <number>', 'calculating only responses with response time which greater than this option', 0)
     .option('--skipSleep', 'remove pauses between requests. Attention: will ddos your server', false)
     .option('--skipSsl', 'skip ssl errors', false)
+    .option('--showSearchDebug', 'show search debug', false)
+    .option('--showCounters', 'show counters of responses', false)
     .option('--datesFormat <string>', 'format of dates to display in logs (regarding Moment.js parsing format)', "DD-MM-YYYY:HH:mm:ss")
     .option('-s, --stats', 'show stats of the requests', false)
     .option('--deleteQueryStats [strings...]', 'delete some query for calculating stats, eg: "page limit size"', [])
@@ -339,7 +341,7 @@ function parseResponse(response, method, url, sendTime, agent, originalStatus, t
             parseObject(response.data.debug)
         }
         if (responseTime>Number(args.responseTimeLimit)*1000){
-            resultLogger.info(`${numberOfFailedEvents+numberOfSuccessfulEvents}/${dataArray.length}     ${response.status}     ${originalStatus}     ${Moment.unix(timestamp / 1000).format(args.datesFormat)}     ${Moment.unix(sendTime / 1000).format(args.datesFormat)}     ${(responseTime / 1000).toFixed(2)}     ${decodeURI(url)}`)
+            resultLogger.info(`${args.showCounters?`${numberOfFailedEvents+numberOfSuccessfulEvents}/${dataArray.length}     `:""}${response.status}     ${originalStatus}     ${Moment.unix(timestamp / 1000).format(args.datesFormat)}     ${Moment.unix(sendTime / 1000).format(args.datesFormat)}     ${(responseTime / 1000).toFixed(2)}     ${decodeURI(url)}${(args.showSearchDebug && response.data.debug && response.data.debug.search && response.data.debug.search.search)?`     ${response.data.debug.search.search}`:''}`)
         }else{
             numberOfSkippedEventsBecauseOfResponseTimeLimit+=1;
         }
@@ -381,7 +383,6 @@ function generateReport(){
             mainLogger.info(`${field} number: ${JSON.stringify(getResponseTime(statsMetrics[field]["num"], false,0))}`);
         }
     });
-
     mainLogger.info(`Total requests time: ${(finishTime - startTime) / 1000} seconds. Total sleep time: ${(totalSleepTime / 1000).toFixed(2)} seconds.`);
     mainLogger.info(`Original time: ${(dataArray[dataArray.length - 1].timestamp - dataArray[0].timestamp) / 1000} seconds. Original rps: ${(1000 * dataArray.length / (dataArray[dataArray.length - 1].timestamp - dataArray[0].timestamp)).toFixed(4)}. Replay rps: ${((numberOfSuccessfulEvents+numberOfFailedEvents) * 1000 / (finishTime - startTime)).toFixed(4)}. Ratio: ${args.ratio}.`);
     if (args.stats) {
