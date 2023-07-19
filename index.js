@@ -341,7 +341,7 @@ function parseResponse(response, method, url, sendTime, agent, originalStatus, t
             parseObject(response.data.debug)
         }
         if (responseTime>Number(args.responseTimeLimit)*1000){
-            resultLogger.info(`${args.showCounters?`${numberOfFailedEvents+numberOfSuccessfulEvents}/${dataArray.length}     `:""}${response.status}     ${originalStatus}     ${Moment.unix(timestamp / 1000).format(args.datesFormat)}     ${Moment.unix(sendTime / 1000).format(args.datesFormat)}     ${(responseTime / 1000).toFixed(2)}${(args.showSearchDebug && response.data.debug && response.data.debug.search && response.data.debug.search.search)?`     ${response.data.debug.search.search}`:''}     ${decodeURI(url)}`)
+            resultLogger.info(`${args.showCounters?`${numberOfFailedEvents+numberOfSuccessfulEvents}/${dataArray.length}     `:""}${response.status}     ${originalStatus}     ${Moment.unix(timestamp / 1000).format(args.datesFormat)}     ${Moment.unix(sendTime / 1000).format(args.datesFormat)}     ${(responseTime / 1000).toFixed(2)}${(args.showSearchDebug && response.data.debug && response.data.debug.search && response.data.debug.search.search)?`     [${response.data.debug.search.search.length}]${response.data.debug.search.search}`:''}     ${decodeURI(url)}     ${url}`)
         }else{
             numberOfSkippedEventsBecauseOfResponseTimeLimit+=1;
         }
