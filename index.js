@@ -104,6 +104,7 @@ let numberOfSuccessfulEvents = 0;
 let numberOfFailedEvents = 0;
 let numberOfNotEmptyResponses = 0;
 let numberOfSkippedEventsBecauseOfResponseTimeLimit = 0;
+let numberOfSkippedNotEmptyEvents = 0;
 let totalResponseTime = 0;
 let startTime = 0;
 let finishTime = 0;
@@ -341,9 +342,10 @@ function parseResponse(response, method, url, sendTime, agent, originalStatus, t
             parseObject(response.data.debug)
         }
         if (responseTime>Number(args.responseTimeLimit)*1000){
-            resultLogger.info(`${args.showCounters?`${zeroPad(numberOfFailedEvents+numberOfSuccessfulEvents, dataArray.length.toString().length)}/${dataArray.length}     `:""}${response.status}     ${originalStatus}     ${Moment.unix(timestamp / 1000).format(args.datesFormat)}     ${Moment.unix(sendTime / 1000).format(args.datesFormat)}     ${(responseTime / 1000).toFixed(2)}${(args.showSearchDebug && response.data.debug && response.data.debug.search && response.data.debug.search.search)?`     [${response.data.debug.search.search.length}]     (${response.data.results.length})     ${response.data.debug.search.search}`:''}     ${decodeURI(url)}     ${url}`)
+            resultLogger.info(`${args.showCounters?`${zeroPad(numberOfFailedEvents+numberOfSuccessfulEvents, dataArray.length.toString().length)}/${dataArray.length}     `:""}${response.status}     ${originalStatus}     ${Moment.unix(timestamp / 1000).format(args.datesFormat)}     ${Moment.unix(sendTime / 1000).format(args.datesFormat)}     ${(responseTime / 1000).toFixed(2)}${(args.showSearchDebug && response.data.debug && response.data.debug.search && response.data.debug.search.search)?`     [${response.data.debug.search.search.length}]     (${zeroPad(response.data.results.length,2)})     ${response.data.debug.search.search}`:''}     ${decodeURI(url)}     ${url}`)
         }else{
             numberOfSkippedEventsBecauseOfResponseTimeLimit+=1;
+            if (response.data && response.data.results && response.data.results.length>0) numberOfSkippedNotEmptyEvents+=1;
         }
         if (response.data.debug) debugLogger.info(JSON.stringify(response.data.debug));
 
@@ -371,7 +373,7 @@ function generateReport(){
     mainLogger.info(`Host: ${args.prefix}. Start time: ${startProcessTime.toISOString()}. Finish time: ${(new Date()).toISOString()}. Options: ${args.customQueryParams}`);
     mainLogger.info(`Total number of requests: ${numberOfSuccessfulEvents+numberOfFailedEvents}. Number of the failed requests: ${numberOfFailedEvents}. Percent of the successful requests: ${(100 * numberOfSuccessfulEvents / (numberOfSuccessfulEvents+numberOfFailedEvents)).toFixed(2)}%.`);
     mainLogger.info(`Number of not empty responses: ${numberOfNotEmptyResponses}. Percent of not empty responses: ${(100 * numberOfNotEmptyResponses / (numberOfSuccessfulEvents+numberOfFailedEvents)).toFixed(2)}%.`);
-    if (Number(args.responseTimeLimit)>0)mainLogger.info(`Number of skipped responses because of response time limit: ${numberOfSkippedEventsBecauseOfResponseTimeLimit}. Percent of skipped responses: ${(100 * numberOfSkippedEventsBecauseOfResponseTimeLimit / (numberOfSuccessfulEvents+numberOfFailedEvents)).toFixed(2)}%`);
+    if (Number(args.responseTimeLimit)>0)mainLogger.info(`Number of skipped responses because of response time limit: ${numberOfSkippedEventsBecauseOfResponseTimeLimit}. Percent of skipped responses: ${(100 * numberOfSkippedEventsBecauseOfResponseTimeLimit / (numberOfSuccessfulEvents+numberOfFailedEvents)).toFixed(2)}%. Number of not empty skipped responses: ${numberOfSkippedNotEmptyEvents}. Percent of not empty skipped responses: ${(100 * numberOfSkippedNotEmptyEvents / (numberOfSkippedEventsBecauseOfResponseTimeLimit)).toFixed(2)}%.\``);
     mainLogger.info(`Response time: ${JSON.stringify(getResponseTime(numStats,true))}`);
     mainLogger.info(`Percentile: ${JSON.stringify(getPercentile(numStats, true))}`);
     Object.keys(statsMetrics).forEach(field=>{
