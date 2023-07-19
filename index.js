@@ -291,7 +291,6 @@ function sendRequest(method, url, sendTime, agent, originalStatus, timestamp) {
 
 function parseResponse(response, method, url, sendTime, agent, originalStatus, timestamp){
     const responseTime = +new Date() - sendTime;
-    if (responseTime>Number(args.responseTimeLimit)*1000){
         if (originalStatus !== response.status.toString()) {
             debugLogger.info(`Response for ${url} has different status code: ${response.status} and ${originalStatus}`);
             numberOfFailedEvents += 1;
@@ -339,11 +338,13 @@ function parseResponse(response, method, url, sendTime, agent, originalStatus, t
             }
             parseObject(response.data.debug)
         }
-        resultLogger.info(`${response.status}     ${originalStatus}     ${Moment.unix(timestamp / 1000).format(args.datesFormat)}     ${Moment.unix(sendTime / 1000).format(args.datesFormat)}     ${(responseTime / 1000).toFixed(2)}     ${decodeURI(url)}`)
+        if (responseTime>Number(args.responseTimeLimit)*1000){
+            resultLogger.info(`${numberOfFailedEvents+numberOfSuccessfulEvents}/${dataArray.length}     ${response.status}     ${originalStatus}     ${Moment.unix(timestamp / 1000).format(args.datesFormat)}     ${Moment.unix(sendTime / 1000).format(args.datesFormat)}     ${(responseTime / 1000).toFixed(2)}     ${decodeURI(url)}`)
+        }else{
+            numberOfSkippedEventsBecauseOfResponseTimeLimit+=1;
+        }
         if (response.data.debug) debugLogger.info(JSON.stringify(response.data.debug));
-    }else{
-        numberOfSkippedEventsBecauseOfResponseTimeLimit+=1;
-    }
+
 }
 
 function getPercentile(stat, toSeconds=false){
@@ -368,7 +369,7 @@ function generateReport(){
     mainLogger.info(`Host: ${args.prefix}. Start time: ${startProcessTime.toISOString()}. Finish time: ${(new Date()).toISOString()}. Options: ${args.customQueryParams}`);
     mainLogger.info(`Total number of requests: ${numberOfSuccessfulEvents+numberOfFailedEvents}. Number of the failed requests: ${numberOfFailedEvents}. Percent of the successful requests: ${(100 * numberOfSuccessfulEvents / (numberOfSuccessfulEvents+numberOfFailedEvents)).toFixed(2)}%.`);
     mainLogger.info(`Number of not empty responses: ${numberOfNotEmptyResponses}. Percent of not empty responses: ${(100 * numberOfNotEmptyResponses / (numberOfSuccessfulEvents+numberOfFailedEvents)).toFixed(2)}%.`);
-    if (Number(args.responseTimeLimit)>0)mainLogger.info(`Number of skipped responses because of response time limit: ${numberOfSkippedEventsBecauseOfResponseTimeLimit}.`);
+    if (Number(args.responseTimeLimit)>0)mainLogger.info(`Number of skipped responses because of response time limit: ${numberOfSkippedEventsBecauseOfResponseTimeLimit}. Percent of skipped responses: ${(100 * numberOfSkippedEventsBecauseOfResponseTimeLimit / (numberOfSuccessfulEvents+numberOfFailedEvents)).toFixed(2)}%`);
     mainLogger.info(`Response time: ${JSON.stringify(getResponseTime(numStats,true))}`);
     mainLogger.info(`Percentile: ${JSON.stringify(getPercentile(numStats, true))}`);
     Object.keys(statsMetrics).forEach(field=>{
