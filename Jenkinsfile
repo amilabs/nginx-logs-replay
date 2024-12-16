@@ -18,7 +18,7 @@ pipeline {
                         sh 'unzip FILE -d ${WORKSPACE}'
                         sh 'ls -la'
                     } else {
-                        sh 'mv $FILE nginx.log'
+                        sh 'mv FILE nginx.log'
                     }
                     sh """
                         node index.js \\
