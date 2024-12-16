@@ -13,10 +13,15 @@ pipeline {
             steps {
                 script {
                     withFileParameter('FILE'){
-                        sh 'mv $FILE ${WORKSPACE}/nginx.log'
+                        if (params.FILE_FILENAME.endsWith('.zip')) {
+                            sh 'mv $FILE ${WORKSPACE}/nginx.zip'
+                            sh 'unzip ${WORKSPACE}/nginx.zip -d ${WORKSPACE}'
+                        } else {
+                            sh 'mv $FILE ${WORKSPACE}/nginx.log'
+                        }
                         sh """
                             node index.js \\
-                                --filePath nginx.log \\
+                                --filePath ${WORKSPACE}/nginx.log \\
                                 --ratio $RATIO \\
                                 --prefix $PREFIX \\
                                 $CUSTOM_OPTIONS
