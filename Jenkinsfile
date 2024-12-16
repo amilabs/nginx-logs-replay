@@ -14,7 +14,7 @@ pipeline {
                 script {
                     withFileParameter('FILE'){
                         sh """
-                            nginx-replay \\
+                            node index.js \\
                                 --filePath $FILE \\
                                 --ratio $RATIO \\
                                 --prefix $URL \\
