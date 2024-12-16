@@ -13,6 +13,7 @@ pipeline {
             steps {
                 script {
                     unstash 'FILE'
+                    sh "echo $FILE_FILENAME"
                     if (params.FILE_FILENAME.endsWith('.zip')) {
                         sh 'mv $FILE ${WORKSPACE}/nginx.zip'
                         sh 'unzip ${WORKSPACE}/nginx.zip -d ${WORKSPACE}'
