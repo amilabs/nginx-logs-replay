@@ -12,21 +12,20 @@ pipeline {
         stage('Run nginx-logs-replay') {
             steps {
                 script {
-                    withFileParameter('FILE'){
-                        if (params.FILE_FILENAME.endsWith('.zip')) {
-                            sh 'mv $FILE ${WORKSPACE}/nginx.zip'
-                            sh 'unzip ${WORKSPACE}/nginx.zip -d ${WORKSPACE}'
-                        } else {
-                            sh 'mv $FILE ${WORKSPACE}/nginx.log'
-                        }
-                        sh """
-                            node index.js \\
-                                --filePath ${WORKSPACE}/nginx.log \\
-                                --ratio $RATIO \\
-                                --prefix $PREFIX \\
-                                $CUSTOM_OPTIONS
-                        """
+                    unstash 'FILE'
+                    if (params.FILE_FILENAME.endsWith('.zip')) {
+                        sh 'mv $FILE ${WORKSPACE}/nginx.zip'
+                        sh 'unzip ${WORKSPACE}/nginx.zip -d ${WORKSPACE}'
+                    } else {
+                        sh 'mv $FILE ${WORKSPACE}/nginx.log'
                     }
+                    sh """
+                        node index.js \\
+                            --filePath ${WORKSPACE}/nginx.log \\
+                            --ratio $RATIO \\
+                            --prefix $PREFIX \\
+                            $CUSTOM_OPTIONS
+                    """
                 }
             }
         }
