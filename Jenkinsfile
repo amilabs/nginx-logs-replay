@@ -17,7 +17,7 @@ pipeline {
                             node index.js \\
                                 --filePath $FILE \\
                                 --ratio $RATIO \\
-                                --prefix $URL \\
+                                --prefix $PREFIX \\
                                 $CUSTOM_OPTIONS
                         """
                     }
