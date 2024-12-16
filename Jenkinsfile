@@ -13,16 +13,9 @@ pipeline {
             steps {
                 script {
                     unstash 'FILE'
-                    if (env.FILE_FILENAME.endsWith('.zip')) {
-                        sh 'unzip FILE -d ${WORKSPACE}'
-                        sh 'mv ${WORKSPACE}/*.log ${WORKSPACE}/nginx.log'
-                        sh 'ls -la'
-                    } else {
-                        sh 'mv FILE nginx.log'
-                    }
                     sh """
                         node index.js \\
-                            --filePath nginx.log \\
+                            --filePath FILE \\
                             --ratio $RATIO \\
                             --prefix $PREFIX \\
                             $CUSTOM_OPTIONS
