@@ -13,9 +13,10 @@ pipeline {
             steps {
                 script {
                     withFileParameter('FILE'){
+                        sh "mv $FILE nginx.log"
                         sh """
                             node index.js \\
-                                --filePath $FILE \\
+                                --filePath nginx.log \\
                                 --ratio $RATIO \\
                                 --prefix $PREFIX \\
                                 $CUSTOM_OPTIONS
