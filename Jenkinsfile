@@ -6,7 +6,7 @@ pipeline {
     stages {
         stage('Install Dependencies') {
             steps {
-                sh 'npm i -g @amilabs/nginx-logs-replay'
+                sh 'npm i'
             }
         }
         stage('Run nginx-logs-replay') {
@@ -14,7 +14,7 @@ pipeline {
                 script {
                     withFileParameter('FILE'){
                         sh """
-                            nginx-replay \\
+                            node index.js \\
                                 --filePath $FILE \\
                                 --ratio $RATIO \\
                                 --prefix $URL \\
@@ -23,6 +23,11 @@ pipeline {
                     }
                 }
             }
+        }
+    }
+    post {
+        always {
+            cleanWs()
         }
     }
 }
