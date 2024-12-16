@@ -14,8 +14,8 @@ pipeline {
                 script {
                     unstash 'FILE'
                     if (env.FILE_FILENAME.endsWith('.zip')) {
-                        sh 'mv $FILE ${WORKSPACE}/nginx.zip'
                         sh 'unzip FILE -d ${WORKSPACE}'
+                        sh 'mv ${WORKSPACE}/*.log ${WORKSPACE}/nginx.log'
                         sh 'ls -la'
                     } else {
                         sh 'mv FILE nginx.log'
