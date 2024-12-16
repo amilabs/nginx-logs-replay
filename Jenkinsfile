@@ -16,7 +16,7 @@ pipeline {
                         unstash 'FILE'
                         sh """
                             node index.js \\
-                                --filePath $FILE \\
+                                --filePath FILE \\
                                 --ratio $RATIO \\
                                 --prefix $PREFIX \\
                                 $CUSTOM_OPTIONS
