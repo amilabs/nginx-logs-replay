@@ -13,7 +13,9 @@ pipeline {
             steps {
                 script {
                     unstash 'FILE'
-                    sh "echo $FILE_FILENAME"
+                    if (env.FILE_FILENAME.endsWith('.gz')) {
+                        sh 'gunzip -c "FILE" > FILE'
+                    }
                     sh """
                         node index.js \\
                             --filePath FILE \\
