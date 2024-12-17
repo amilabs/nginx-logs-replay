@@ -13,6 +13,7 @@ pipeline {
             steps {
                 script {
                     unstash 'FILE'
+                    sh "echo $FILE_FILENAME"
                     sh """
                         node index.js \\
                             --filePath FILE \\
