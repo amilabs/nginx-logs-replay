@@ -14,7 +14,8 @@ pipeline {
                 script {
                     unstash 'FILE'
                     if (env.FILE_FILENAME.endsWith('.gz')) {
-                        sh 'gunzip -c "FILE" > FILE'
+                        sh "mv FILE TEMP_FILE.gz"
+                        sh 'gunzip -c "TEMP_FILE.gz" > FILE'
                     }
                     sh """
                         node index.js \\
