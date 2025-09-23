@@ -12,7 +12,7 @@ const _ = require('lodash');
 program.version(process.env.npm_package_version);
 const zeroPad = (num, places) => String(num).padStart(places, '0')
 const defaultFormat = '$remote_addr - $remote_user [$time_local] "$request" $status $body_bytes_sent "$http_referer" "$http_user_agent"';
-const defaultFormatTime = 'DD/MMM/YYYY:HH:mm:ss Z';
+const defaultFormatTime = 'DD/MMM/YYYY:HH:mm:ss';
 
 program
     .requiredOption('-p, --prefix <url>', 'url for sending requests')
@@ -45,6 +45,7 @@ program
     .option('--filterOnly [strings...]', 'filter logs for replaying, eg: "/test data .php"', [])
     .option('--filterSkip [strings...]', 'skip logs for replaying, eg: "/test data .php"', [])
     .option('--customQueryParams [strings...]', 'additional query params fro requests, eg: "test=true size=3"', [])
+    .option('--dateStats', 'calculate date stats', false)
     .option('--hideStatsLimit <int>', 'limit number of stats', '0');
 
 program.parse(process.argv);
@@ -110,6 +111,12 @@ let startTime = 0;
 let finishTime = 0;
 let totalSleepTime = 0;
 let numStats = new Stats();
+const dateStats = {
+    timestamp: new Stats(),
+    timeDiff: new Stats(),
+    timeDiffHistorical: new Stats(),
+    empty: 0
+}
 
 const deleteQuery = args.deleteQueryStats;
 const stats = {};
@@ -153,7 +160,7 @@ process.on("SIGINT", () => {
     process.exit();
 });
 
-args.startTimestamp = args.startTimestamp.length>10? args.startTimestamp: args.startTimestamp*1000;
+args.startTimestamp = args.startTimestamp*1000;
 const startProcessTime = new Date();
 const parser = new NginxParser(args.format);
 
@@ -303,43 +310,68 @@ function parseResponse(response, method, url, sendTime, agent, originalStatus, t
         if (response.data && response.data.results && response.data.results.length>0) numberOfNotEmptyResponses+=1;
         totalResponseTime += responseTime;
         numStats.push(responseTime);
-        if (response.data.debug){
-            function parseObject(object, name){
-                function setField(name, field, value, type){
-                    const distName = name===undefined?field:name+"."+field;
-                    if (statsMetrics[distName]===undefined){
-                        statsMetrics[distName]={}
+        if (response.data){
+            if (response.status.toString()==="200" && args.dateStats ){
+                let lastTimestamp;
+                if (url.includes("/getAddressTransactions")){
+                    if (response.data.length>0){
+                        lastTimestamp = response.data[response.data.length-1].timestamp;
+                    }else{
+                        dateStats.empty+=1;
                     }
-                    if (statsMetrics[distName][type]===undefined){
-                        statsMetrics[distName][type]=new Stats();
+                }else if (url.includes("/getTokenHistory") || url.includes("/getAddressHistory")) {
+                    if (response.data.operations.length>0){
+                        lastTimestamp = response.data.operations[response.data.operations.length-1].timestamp;
                     }
-                    statsMetrics[distName][type].push(value);
+                }else if(url.includes("/service/service.php?data=")){
+                    if (response.data.transfers.length>0){
+                        lastTimestamp = response.data.transfers[response.data.transfers.length-1].timestamp;
+                    }
                 }
-                for (const [field, fieldValue] of Object.entries(object)){
-                    if (fieldValue){
-                        if (typeof fieldValue==="object"){
-                            if (_.has(fieldValue, "queries") || _.has(fieldValue, "num") || _.has(fieldValue, "time")){
-                                if (_.has(fieldValue, "num")) setField(name, field, fieldValue["num"], "num")
-                                if (_.has(fieldValue, "time")) setField(name, field, fieldValue["time"], "time")
-                                if (_.has(fieldValue, "queries")){
-                                    for (const [subField, subValue] of Object.entries(fieldValue["queries"])){
-                                        setField(name, field+"."+subField, subValue, "time");
+                if (lastTimestamp){
+                        dateStats.timestamp.push(lastTimestamp);
+                        dateStats.timeDiffHistorical.push(timestamp/1000 - lastTimestamp);
+                        dateStats.timeDiff.push((+new Date()/1000) - lastTimestamp);
+                }
+            }
+            if (response.data.debug){
+                function parseObject(object, name){
+                    function setField(name, field, value, type){
+                        const distName = name===undefined?field:name+"."+field;
+                        if (statsMetrics[distName]===undefined){
+                            statsMetrics[distName]={}
+                        }
+                        if (statsMetrics[distName][type]===undefined){
+                            statsMetrics[distName][type]=new Stats();
+                        }
+                        statsMetrics[distName][type].push(value);
+                    }
+                    for (const [field, fieldValue] of Object.entries(object)){
+                        if (fieldValue){
+                            if (typeof fieldValue==="object"){
+                                if (_.has(fieldValue, "queries") || _.has(fieldValue, "num") || _.has(fieldValue, "time")){
+                                    if (_.has(fieldValue, "num")) setField(name, field, fieldValue["num"], "num")
+                                    if (_.has(fieldValue, "time")) setField(name, field, fieldValue["time"], "time")
+                                    if (_.has(fieldValue, "queries")){
+                                        for (const [subField, subValue] of Object.entries(fieldValue["queries"])){
+                                            setField(name, field+"."+subField, subValue, "time");
+                                        }
                                     }
+                                } else if(_.has(fieldValue, "usage")){
+                                    setField(name, field, fieldValue["usage"], "usage")
+                                    setField(name, field, fieldValue["peak"], "peak")
+                                }else{
+                                    parseObject(fieldValue, name===undefined?field:name+"."+field);
                                 }
-                            } else if(_.has(fieldValue, "usage")){
-                                setField(name, field, fieldValue["usage"], "usage")
-                                setField(name, field, fieldValue["peak"], "peak")
-                            }else{
-                                parseObject(fieldValue, name===undefined?field:name+"."+field);
-                            }
 
-                        }else if (typeof fieldValue === 'number'){
-                            setField(name, field, fieldValue, "time");
+                            }else if (typeof fieldValue === 'number'){
+                                setField(name, field, fieldValue, "time");
+                            }
                         }
                     }
                 }
+                parseObject(response.data.debug)
             }
-            parseObject(response.data.debug)
         }
         if (responseTime>Number(args.responseTimeLimit)*1000){
             if (response.data && response.data.results && response.data.results.length>0) numberOfNotSkippedNotEmptyEvents+=1;
@@ -351,11 +383,33 @@ function parseResponse(response, method, url, sendTime, agent, originalStatus, t
 
 }
 
-function getPercentile(stat, toSeconds=false){
+function getPercentile(stat, toSeconds=false, fixed=3){
     const percentiles = [1,5,25,50,75,95,99];
     let percentilesObject = {};
     percentiles.forEach(percentile=>{
-        percentilesObject[percentile] = (stat.percentile(percentile)/(toSeconds?1000:1)).toFixed(3)
+        percentilesObject[percentile] = (stat.percentile(percentile)/(toSeconds?1000:1)).toFixed(fixed)
+    });
+    return percentilesObject;
+}
+
+function getPercentileTimestamp(stat, toDate=true){
+    const percentiles = [1,5,25,50,75,95,99];
+    let percentilesObject = {};
+    percentiles.forEach(percentile=>{
+        if (toDate){
+            percentilesObject[percentile] = Moment.unix(stat.percentile(percentile)).format(args.datesFormat);
+        }else{
+            percentilesObject[percentile] = (stat.percentile(percentile));
+        }
+    });
+    return percentilesObject;
+}
+
+function getPercentileDays(stat){
+    const percentiles = [1,5,25,50,75,95,99];
+    let percentilesObject = {};
+    percentiles.forEach(percentile=>{
+        percentilesObject[percentile] = (stat.percentile(percentile)/(60*60*24)).toFixed(2);
     });
     return percentilesObject;
 }
@@ -387,6 +441,14 @@ function generateReport(){
     });
     mainLogger.info(`Total requests time: ${(finishTime - startTime) / 1000} seconds. Total sleep time: ${(totalSleepTime / 1000).toFixed(2)} seconds.`);
     mainLogger.info(`Original time: ${(dataArray[dataArray.length - 1].timestamp - dataArray[0].timestamp) / 1000} seconds. Original rps: ${(1000 * dataArray.length / (dataArray[dataArray.length - 1].timestamp - dataArray[0].timestamp)).toFixed(4)}. Replay rps: ${((numberOfSuccessfulEvents+numberOfFailedEvents) * 1000 / (finishTime - startTime)).toFixed(4)}. Ratio: ${args.ratio}.`);
+    if (args.dateStats){
+        if (dateStats.timestamp.length>0){
+            mainLogger.info(`Last timestamps: ${JSON.stringify(getPercentileTimestamp(dateStats.timestamp))}`);
+            mainLogger.info(`Days diff current: ${JSON.stringify(getPercentileDays(dateStats.timeDiff))}`);
+            mainLogger.info(`Days diff historical: ${JSON.stringify(getPercentileDays(dateStats.timeDiffHistorical))}`);
+            mainLogger.info(`Number of empty responses for date stats: ${dateStats.empty}`);
+        }
+    }
     if (args.stats) {
         const hiddenStats = {};
         let sortedStats = Object.keys(stats).sort((a, b) => stats[b] - stats[a]);
