@@ -503,7 +503,7 @@ function generateReport(){
     mainLogger.info(`Original time: ${(dataArray[dataArray.length - 1].timestamp - dataArray[0].timestamp) / 1000} seconds. Original rps: ${(1000 * dataArray.length / (dataArray[dataArray.length - 1].timestamp - dataArray[0].timestamp)).toFixed(4)}. Replay rps: ${((numberOfSuccessfulEvents+numberOfFailedEvents) * 1000 / (finishTime - startTime)).toFixed(4)}. Ratio: ${args.ratio}.`);
     if (args.dateStats){
         if (dateStats.timestamp.length>0){
-            mainLogger.info(`First timestamps: ${JSON.stringify(getPercentileTimestamp(dateStats.timestamp))}`);
+            mainLogger.info(`First timestamps: ${JSON.stringify(getPercentileTimestamp(dateStats.timestampFirst))}`);
             mainLogger.info(`Last timestamps: ${JSON.stringify(getPercentileTimestamp(dateStats.timestamp))}`);
             mainLogger.info(`Diff between first and last timestamps: ${JSON.stringify(getPercentileDays(dateStats.timestampDiff, false))}`);
             mainLogger.info(`Days diff current: ${JSON.stringify(getPercentileDays(dateStats.timeDiff))}`);
@@ -528,6 +528,6 @@ function generateReport(){
                 hiddenStats[stats[x]] ? hiddenStats[stats[x]] += 1 : hiddenStats[stats[x]] = 1;
             }
         });
-        if (Object.keys(hiddenStats) > 0) mainLogger.info(`Hidden stats: ${JSON.stringify(hiddenStats)}`);
+        if (Object.keys(hiddenStats).length > 0) mainLogger.info(`Hidden stats: ${JSON.stringify(hiddenStats)}`);
     }
 }
