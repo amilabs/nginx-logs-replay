@@ -112,10 +112,15 @@ let finishTime = 0;
 let totalSleepTime = 0;
 let numStats = new Stats();
 const dateStats = {
+    timestampFirst: new Stats(),
     timestamp: new Stats(),
+    timestampDiff: new Stats(),
     timeDiff: new Stats(),
     timeDiffHistorical: new Stats(),
-    empty: 0
+    empty: 0,
+    numberOfRequestsWithLimitGreaterThanDefault: 0,
+    numberOfRequestsWithNumberOfRecordsLessThanPageSize: 0,
+    numberOfRequestsWithDataOlderThanAHalfYear: 0
 }
 
 const deleteQuery = args.deleteQueryStats;
@@ -206,6 +211,7 @@ async function replay(){
             requestUrl = dataArray[i].req.split(" ")[1];
         }
         debugLogger.info(`Sending ${requestMethod} request to ${requestUrl} at ${now}`);
+        
         if (args.stats) {
             let statsUrl = new URL(args.prefix + requestUrl);
             if (args.statsOnlyPath) {
@@ -311,27 +317,81 @@ function parseResponse(response, method, url, sendTime, agent, originalStatus, t
         totalResponseTime += responseTime;
         numStats.push(responseTime);
         if (response.data){
-            if (response.status.toString()==="200" && args.dateStats ){
-                let lastTimestamp;
-                if (url.includes("/getAddressTransactions")){
-                    if (response.data.length>0){
-                        lastTimestamp = response.data[response.data.length-1].timestamp;
-                    }else{
-                        dateStats.empty+=1;
-                    }
-                }else if (url.includes("/getTokenHistory") || url.includes("/getAddressHistory")) {
-                    if (response.data.operations.length>0){
-                        lastTimestamp = response.data.operations[response.data.operations.length-1].timestamp;
-                    }
-                }else if(url.includes("/service/service.php?data=")){
-                    if (response.data.transfers.length>0){
-                        lastTimestamp = response.data.transfers[response.data.transfers.length-1].timestamp;
+            if (args.dateStats){
+                let limit = 10;
+                const urlObj = new URL(args.prefix + url);
+                const pathname = urlObj.pathname;
+                
+                if (pathname.includes('/getAddressTransactions') || 
+                    pathname.includes('/getTokenHistory') || 
+                    pathname.includes('/getAddressHistory')) {
+                    const limitParam = urlObj.searchParams.get('limit');
+                    if (limitParam) {
+                        limit = parseInt(limitParam);
                     }
                 }
-                if (lastTimestamp){
-                        dateStats.timestamp.push(lastTimestamp);
-                        dateStats.timeDiffHistorical.push(timestamp/1000 - lastTimestamp);
-                        dateStats.timeDiff.push((+new Date()/1000) - lastTimestamp);
+                
+                else if (pathname.includes('/service/service.php')) {
+                    const pageParam = urlObj.searchParams.get('page');
+                    
+                    if (pageParam) {
+                        const decodedPage = decodeURIComponent(pageParam);
+                        const pageSizeMatch = decodedPage.match(/pageSize[=%](\d+)/);
+                        if (pageSizeMatch) {
+                            limit = parseInt(pageSizeMatch[1]);
+                        }
+                    }
+                }
+                if (limit>10){
+                   dateStats.numberOfRequestsWithLimitGreaterThanDefault++;
+                }
+                if (response.status.toString()==="200"){
+
+                    let lastTimestamp;
+                    let firstTimestamp;
+                    if (url.includes("/getAddressTransactions")){
+                        if (response.data.length>0){
+                            lastTimestamp = response.data[response.data.length-1].timestamp;
+                            firstTimestamp = response.data[0].timestamp;
+                            if (response.data.length<limit){
+                                dateStats.numberOfRequestsWithNumberOfRecordsLessThanPageSize++;
+                                if (lastTimestamp < (timestamp/1000-60*60*24*30*6)){
+                                    dateStats.numberOfRequestsWithDataOlderThanAHalfYear++;
+                                }
+                            }
+                        }else{
+                            dateStats.empty+=1;
+                        }
+                    }else if (url.includes("/getTokenHistory") || url.includes("/getAddressHistory")) {
+                        if (response.data.operations.length>0){
+                            lastTimestamp = response.data.operations[response.data.operations.length-1].timestamp;
+                            firstTimestamp = response.data.operations[0].timestamp;
+                            if (response.data.operations.length<limit){
+                                dateStats.numberOfRequestsWithNumberOfRecordsLessThanPageSize++;
+                                if (lastTimestamp < (timestamp/1000-60*60*24*30*6)){
+                                    dateStats.numberOfRequestsWithDataOlderThanAHalfYear++;
+                                }
+                            }
+                        }
+                    }else if(url.includes("/service/service.php?data=")){
+                        if (response.data.transfers.length>0){
+                            lastTimestamp = response.data.transfers[response.data.transfers.length-1].timestamp;
+                            firstTimestamp = response.data.transfers[0].timestamp;
+                            if (response.data.transfers.length<limit){
+                                dateStats.numberOfRequestsWithNumberOfRecordsLessThanPageSize++;
+                                if (lastTimestamp < (timestamp/1000-60*60*24*30*6)){
+                                    dateStats.numberOfRequestsWithDataOlderThanAHalfYear++;
+                                }
+                            }
+                        }
+                    }
+                    if (firstTimestamp){
+                            dateStats.timestamp.push(lastTimestamp);
+                            dateStats.timestampFirst.push(firstTimestamp);
+                            dateStats.timestampDiff.push(firstTimestamp-lastTimestamp);
+                            dateStats.timeDiffHistorical.push(timestamp/1000 - lastTimestamp);
+                            dateStats.timeDiff.push((+new Date()/1000) - lastTimestamp);
+                    }
                 }
             }
             if (response.data.debug){
@@ -443,11 +503,18 @@ function generateReport(){
     mainLogger.info(`Original time: ${(dataArray[dataArray.length - 1].timestamp - dataArray[0].timestamp) / 1000} seconds. Original rps: ${(1000 * dataArray.length / (dataArray[dataArray.length - 1].timestamp - dataArray[0].timestamp)).toFixed(4)}. Replay rps: ${((numberOfSuccessfulEvents+numberOfFailedEvents) * 1000 / (finishTime - startTime)).toFixed(4)}. Ratio: ${args.ratio}.`);
     if (args.dateStats){
         if (dateStats.timestamp.length>0){
+            mainLogger.info(`First timestamps: ${JSON.stringify(getPercentileTimestamp(dateStats.timestamp))}`);
             mainLogger.info(`Last timestamps: ${JSON.stringify(getPercentileTimestamp(dateStats.timestamp))}`);
+            mainLogger.info(`Diff between first and last timestamps: ${JSON.stringify(getPercentileDays(dateStats.timestampDiff, false))}`);
             mainLogger.info(`Days diff current: ${JSON.stringify(getPercentileDays(dateStats.timeDiff))}`);
             mainLogger.info(`Days diff historical: ${JSON.stringify(getPercentileDays(dateStats.timeDiffHistorical))}`);
             mainLogger.info(`Number of empty responses for date stats: ${dateStats.empty}`);
+            mainLogger.info(`Number of requests with limit greater than default (10): ${dateStats.numberOfRequestsWithLimitGreaterThanDefault}`);
+
         }
+        mainLogger.info(`Number of requests with limit/pageSize greater than default (10): ${dateStats.numberOfRequestsWithLimitGreaterThanDefault}. Percent: ${(100*dateStats.numberOfRequestsWithLimitGreaterThanDefault/(numberOfSuccessfulEvents+numberOfFailedEvents)).toFixed(2)}%.`);
+        mainLogger.info(`Number of requests with number of records less than pageSize/limit: ${dateStats.numberOfRequestsWithNumberOfRecordsLessThanPageSize} of ${dateStats.timestampFirst.length} requests with data. Percent: ${(100*dateStats.numberOfRequestsWithNumberOfRecordsLessThanPageSize/dateStats.timestampFirst.length).toFixed(2)}%.`);
+        mainLogger.info(`Number of requests with data older than a half year: ${dateStats.numberOfRequestsWithDataOlderThanAHalfYear} of ${dateStats.numberOfRequestsWithNumberOfRecordsLessThanPageSize} requests with number of records less than pageSize/limit. Percent: ${(100*dateStats.numberOfRequestsWithDataOlderThanAHalfYear/dateStats.numberOfRequestsWithNumberOfRecordsLessThanPageSize).toFixed(2)}%.`);
     }
     if (args.stats) {
         const hiddenStats = {};
