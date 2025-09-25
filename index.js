@@ -9,6 +9,7 @@ const {program} = require('commander');
 const rl = require("readline");
 const Stats = require('fast-stats').Stats;
 const _ = require('lodash');
+const path = require('path');
 program.version(process.env.npm_package_version);
 const zeroPad = (num, places) => String(num).padStart(places, '0')
 const defaultFormat = '$remote_addr - $remote_user [$time_local] "$request" $status $body_bytes_sent "$http_referer" "$http_user_agent"';
@@ -513,6 +514,9 @@ function generateReport(){
         mainLogger.info(`Number of requests with limit/pageSize greater than default (10): ${dateStats.numberOfRequestsWithLimitGreaterThanDefault}. Percent: ${(100*dateStats.numberOfRequestsWithLimitGreaterThanDefault/(numberOfSuccessfulEvents+numberOfFailedEvents)).toFixed(2)}%.`);
         mainLogger.info(`Number of requests with number of records less than pageSize/limit: ${dateStats.numberOfRequestsWithNumberOfRecordsLessThanPageSize} of ${dateStats.timestampFirst.length} requests with data. Percent: ${(100*dateStats.numberOfRequestsWithNumberOfRecordsLessThanPageSize/dateStats.timestampFirst.length).toFixed(2)}%.`);
         mainLogger.info(`Number of requests with data older than a half year: ${dateStats.numberOfRequestsWithDataOlderThanAHalfYear} of ${dateStats.numberOfRequestsWithNumberOfRecordsLessThanPageSize} requests with number of records less than pageSize/limit. Percent: ${(100*dateStats.numberOfRequestsWithDataOlderThanAHalfYear/dateStats.numberOfRequestsWithNumberOfRecordsLessThanPageSize).toFixed(2)}%.`);
+        // Создаем интерактивную диаграмму
+        generateInteractiveHistogram(dateStats.timeDiff, 'TimeDiff Distribution (Current vs Last Record Time)', 'time_diff_histogram.html');
+        
     }
     if (args.stats) {
         const hiddenStats = {};
@@ -527,5 +531,181 @@ function generateReport(){
             }
         });
         if (Object.keys(hiddenStats).length > 0) mainLogger.info(`Hidden stats: ${JSON.stringify(hiddenStats)}`);
+    }
+}
+
+
+
+function generateInteractiveHistogram(timeDiffStats, title, filename) {
+    if (!timeDiffStats || timeDiffStats.length === 0) {
+        mainLogger.info(`No data available for interactive histogram: ${title}`);
+        return;
+    }
+    
+    // Получаем массив значений из объекта Stats
+    const values = timeDiffStats.data || [];
+    
+    if (values.length === 0) {
+        mainLogger.info(`No data points found for interactive histogram: ${title}`);
+        return;
+    }
+    
+    // Конвертируем секунды в дни для лучшего отображения
+    const valuesInDays = values.map(val => val / (24 * 60 * 60));
+    
+    // Создаем HTML файл с интерактивной диаграммой
+    const htmlContent = `
+<!DOCTYPE html>
+<html>
+<head>
+    <title>${title}</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .stats {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+        .stat-item {
+            display: inline-block;
+            margin-right: 20px;
+            font-weight: bold;
+        }
+        .plot-container {
+            width: 100%;
+            height: 600px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>${title}</h1>
+        
+        <div class="stats">
+            <div class="stat-item">Total Records: ${values.length}</div>
+            <div class="stat-item">Min: ${Math.min(...valuesInDays).toFixed(2)} days</div>
+            <div class="stat-item">Max: ${Math.max(...valuesInDays).toFixed(2)} days</div>
+            <div class="stat-item">Mean: ${(valuesInDays.reduce((a, b) => a + b, 0) / valuesInDays.length).toFixed(2)} days</div>
+            <div class="stat-item">Median: ${valuesInDays.sort((a, b) => a - b)[Math.floor(valuesInDays.length / 2)].toFixed(2)} days</div>
+        </div>
+        
+        <div id="histogram" class="plot-container"></div>
+        <div id="boxplot" class="plot-container"></div>
+    </div>
+
+    <script>
+        const data = ${JSON.stringify(valuesInDays)};
+        
+        // Гистограмма
+        const histogramTrace = {
+            x: data,
+            type: 'histogram',
+            xbins: {
+                start: 0,
+                end: Math.max(...data) + 10,
+                size: 10
+            },
+            name: 'Distribution',
+            marker: {
+                color: 'rgba(58, 71, 80, 0.6)',
+                line: {
+                    color: 'rgba(58, 71, 80, 1.0)',
+                    width: 1
+                }
+            },
+            hovertemplate: 'Days: %{x:.2f}<br>Count: %{y}<extra></extra>'
+        };
+        
+        const histogramLayout = {
+            title: {
+                text: 'Time Difference Distribution',
+                font: { size: 18 }
+            },
+            xaxis: {
+                title: 'Time Difference (Days)',
+                showgrid: true,
+                gridcolor: 'rgba(128,128,128,0.2)'
+            },
+            yaxis: {
+                title: 'Frequency',
+                showgrid: true,
+                gridcolor: 'rgba(128,128,128,0.2)'
+            },
+            plot_bgcolor: 'rgba(0,0,0,0)',
+            paper_bgcolor: 'rgba(0,0,0,0)',
+            showlegend: false,
+            margin: { t: 50, b: 50, l: 50, r: 50 }
+        };
+        
+        const histogramConfig = {
+            responsive: true,
+            displayModeBar: true,
+            modeBarButtonsToRemove: ['pan2d', 'lasso2d', 'select2d'],
+            displaylogo: false
+        };
+        
+        // Box plot для дополнительной статистики
+        const boxplotTrace = {
+            y: data,
+            type: 'box',
+            name: 'Statistics',
+            marker: {
+                color: 'rgba(255, 127, 14, 0.6)',
+                line: {
+                    color: 'rgba(255, 127, 14, 1.0)',
+                    width: 2
+                }
+            },
+            boxpoints: 'outliers',
+            hovertemplate: 'Value: %{y:.2f} days<extra></extra>'
+        };
+        
+        const boxplotLayout = {
+            title: {
+                text: 'Statistical Summary (Box Plot)',
+                font: { size: 18 }
+            },
+            yaxis: {
+                title: 'Time Difference (Days)',
+                showgrid: true,
+                gridcolor: 'rgba(128,128,128,0.2)'
+            },
+            plot_bgcolor: 'rgba(0,0,0,0)',
+            paper_bgcolor: 'rgba(0,0,0,0)',
+            showlegend: false,
+            margin: { t: 50, b: 50, l: 50, r: 50 }
+        };
+        
+        // Создаем графики
+        Plotly.newPlot('histogram', [histogramTrace], histogramLayout, histogramConfig);
+        Plotly.newPlot('boxplot', [boxplotTrace], boxplotLayout, histogramConfig);
+    </script>
+</body>
+</html>`;
+    
+    try {
+        const outputPath = path.resolve(filename);
+        fs.writeFileSync(outputPath, htmlContent);
+        mainLogger.info(`Interactive histogram saved to: ${outputPath}`);
+        mainLogger.info(`Open the file in a browser to view the interactive chart`);
+    } catch (error) {
+        mainLogger.error(`Failed to save interactive histogram: ${error.message}`);
     }
 }
