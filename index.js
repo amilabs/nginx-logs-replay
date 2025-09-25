@@ -608,6 +608,7 @@ function generateInteractiveHistogram(timeDiffStats, title, filename) {
         
         <div id="histogram" class="plot-container"></div>
         <div id="boxplot" class="plot-container"></div>
+        <div id="cumulative" class="plot-container"></div>
     </div>
 
     <script>
@@ -693,9 +694,84 @@ function generateInteractiveHistogram(timeDiffStats, title, filename) {
             margin: { t: 50, b: 50, l: 50, r: 50 }
         };
         
+        // Создаем накопительный график по диапазонам дней
+        function createCumulativeChart() {
+            // Сортируем данные по возрастанию
+            const sortedData = [...data].sort((a, b) => a - b);
+            
+            // Создаем диапазоны (например, по 10 дней)
+            const rangeSize = 10;
+            const maxValue = Math.max(...sortedData);
+            const ranges = [];
+            const cumulativeCounts = [];
+            const labels = [];
+            
+            let cumulativeSum = 0;
+            
+            for (let i = rangeSize; i <= maxValue + rangeSize; i += rangeSize) {
+                const rangeStart = i - rangeSize;
+                const rangeEnd = i;
+                
+                // Считаем количество элементов в текущем диапазоне
+                const countInRange = sortedData.filter(val => val >= rangeStart && val < rangeEnd).length;
+                
+                // Добавляем к накопительной сумме
+                cumulativeSum += countInRange;
+                
+                ranges.push(i);
+                cumulativeCounts.push(cumulativeSum);
+                labels.push(\`\${rangeStart.toFixed(0)}-\${rangeEnd.toFixed(0)} days\`);
+            }
+            
+            const cumulativeTrace = {
+                x: ranges,
+                y: cumulativeCounts,
+                type: 'scatter',
+                mode: 'lines+markers',
+                name: 'Cumulative Sum',
+                line: {
+                    color: 'rgba(31, 119, 180, 1)',
+                    width: 3
+                },
+                marker: {
+                    size: 8,
+                    color: 'rgba(31, 119, 180, 0.8)'
+                },
+                hovertemplate: 'Range: up to %{x} days<br>Cumulative Count: %{y}<br><extra></extra>',
+                text: labels,
+                hoverinfo: 'text+y'
+            };
+            
+            const cumulativeLayout = {
+                title: {
+                    text: 'Cumulative Distribution by Day Ranges',
+                    font: { size: 18 }
+                },
+                xaxis: {
+                    title: 'Day Range (up to)',
+                    showgrid: true,
+                    gridcolor: 'rgba(128,128,128,0.2)'
+                },
+                yaxis: {
+                    title: 'Cumulative Count of Records',
+                    showgrid: true,
+                    gridcolor: 'rgba(128,128,128,0.2)'
+                },
+                plot_bgcolor: 'rgba(0,0,0,0)',
+                paper_bgcolor: 'rgba(0,0,0,0)',
+                showlegend: true,
+                margin: { t: 50, b: 50, l: 50, r: 50 }
+            };
+            
+            return { trace: cumulativeTrace, layout: cumulativeLayout };
+        }
+        
+        const cumulativeChart = createCumulativeChart();
+        
         // Создаем графики
         Plotly.newPlot('histogram', [histogramTrace], histogramLayout, histogramConfig);
         Plotly.newPlot('boxplot', [boxplotTrace], boxplotLayout, histogramConfig);
+        Plotly.newPlot('cumulative', [cumulativeChart.trace], cumulativeChart.layout, histogramConfig);
     </script>
 </body>
 </html>`;

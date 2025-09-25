@@ -31,13 +31,8 @@ pipeline {
     post {
         always {
             script {
-                // Проверяем, существует ли HTML файл
-                sh 'ls -la'
                 if (fileExists('time_diff_histogram.html')) {
-                    // Архивируем HTML файл как артефакт
                     archiveArtifacts artifacts: 'time_diff_histogram.html', fingerprint: true
-                    
-                    // Публикуем HTML отчёт для просмотра в Jenkins
                     publishHTML([
                         allowMissing: false,
                         alwaysLinkToLastBuild: true,
@@ -47,7 +42,6 @@ pipeline {
                         reportName: 'TimeDiff Histogram Report',
                         reportTitles: ''
                     ])
-                    
                     echo 'TimeDiff histogram generated and published successfully'
                 } else {
                     echo 'TimeDiff histogram file not found - skipping artifact archiving and HTML report publishing'
