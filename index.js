@@ -383,6 +383,8 @@ function parseResponse(response, method, url, sendTime, agent, originalStatus, t
                                     dateStats.numberOfRequestsWithDataOlderThanAHalfYear++;
                                 }
                             }
+                        }else{
+                            dateStats.empty+=1;
                         }
                     }
                     if (firstTimestamp){
@@ -501,17 +503,14 @@ function generateReport(){
     });
     mainLogger.info(`Total requests time: ${(finishTime - startTime) / 1000} seconds. Total sleep time: ${(totalSleepTime / 1000).toFixed(2)} seconds.`);
     mainLogger.info(`Original time: ${(dataArray[dataArray.length - 1].timestamp - dataArray[0].timestamp) / 1000} seconds. Original rps: ${(1000 * dataArray.length / (dataArray[dataArray.length - 1].timestamp - dataArray[0].timestamp)).toFixed(4)}. Replay rps: ${((numberOfSuccessfulEvents+numberOfFailedEvents) * 1000 / (finishTime - startTime)).toFixed(4)}. Ratio: ${args.ratio}.`);
-    if (args.dateStats){
-        if (dateStats.timestamp.length>0){
-            mainLogger.info(`First timestamps: ${JSON.stringify(getPercentileTimestamp(dateStats.timestampFirst))}`);
-            mainLogger.info(`Last timestamps: ${JSON.stringify(getPercentileTimestamp(dateStats.timestamp))}`);
-            mainLogger.info(`Diff between first and last timestamps: ${JSON.stringify(getPercentileDays(dateStats.timestampDiff, false))}`);
-            mainLogger.info(`Days diff current: ${JSON.stringify(getPercentileDays(dateStats.timeDiff))}`);
-            mainLogger.info(`Days diff historical: ${JSON.stringify(getPercentileDays(dateStats.timeDiffHistorical))}`);
-            mainLogger.info(`Number of empty responses for date stats: ${dateStats.empty}`);
-            mainLogger.info(`Number of requests with limit greater than default (10): ${dateStats.numberOfRequestsWithLimitGreaterThanDefault}`);
-
-        }
+    if (args.dateStats && dateStats.timestamp.length>0){
+        mainLogger.info(`First timestamps: ${JSON.stringify(getPercentileTimestamp(dateStats.timestampFirst))}`);
+        mainLogger.info(`Last timestamps: ${JSON.stringify(getPercentileTimestamp(dateStats.timestamp))}`);
+        mainLogger.info(`Diff between first and last timestamps: ${JSON.stringify(getPercentileDays(dateStats.timestampDiff, false))}`);
+        mainLogger.info(`Days diff current: ${JSON.stringify(getPercentileDays(dateStats.timeDiff))}`);
+        mainLogger.info(`Days diff historical: ${JSON.stringify(getPercentileDays(dateStats.timeDiffHistorical))}`);
+        mainLogger.info(`Number of empty responses for date stats: ${dateStats.empty}`);
+        mainLogger.info(`Number of requests with limit greater than default (10): ${dateStats.numberOfRequestsWithLimitGreaterThanDefault}`);
         mainLogger.info(`Number of requests with limit/pageSize greater than default (10): ${dateStats.numberOfRequestsWithLimitGreaterThanDefault}. Percent: ${(100*dateStats.numberOfRequestsWithLimitGreaterThanDefault/(numberOfSuccessfulEvents+numberOfFailedEvents)).toFixed(2)}%.`);
         mainLogger.info(`Number of requests with number of records less than pageSize/limit: ${dateStats.numberOfRequestsWithNumberOfRecordsLessThanPageSize} of ${dateStats.timestampFirst.length} requests with data. Percent: ${(100*dateStats.numberOfRequestsWithNumberOfRecordsLessThanPageSize/dateStats.timestampFirst.length).toFixed(2)}%.`);
         mainLogger.info(`Number of requests with data older than a half year: ${dateStats.numberOfRequestsWithDataOlderThanAHalfYear} of ${dateStats.numberOfRequestsWithNumberOfRecordsLessThanPageSize} requests with number of records less than pageSize/limit. Percent: ${(100*dateStats.numberOfRequestsWithDataOlderThanAHalfYear/dateStats.numberOfRequestsWithNumberOfRecordsLessThanPageSize).toFixed(2)}%.`);
