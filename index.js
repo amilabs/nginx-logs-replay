@@ -600,10 +600,10 @@ function generateInteractiveHistogram(timeDiffStats, title, filename) {
         
         <div class="stats">
             <div class="stat-item">Total Records: ${values.length}</div>
-            <div class="stat-item">Min: ${Math.min(...valuesInDays).toFixed(2)} days</div>
-            <div class="stat-item">Max: ${Math.max(...valuesInDays).toFixed(2)} days</div>
+            <div class="stat-item">Min: ${valuesInDays.reduce((a, b) => Math.min(a, b), Infinity).toFixed(2)} days</div>
+            <div class="stat-item">Max: ${valuesInDays.reduce((a, b) => Math.max(a, b), -Infinity).toFixed(2)} days</div>
             <div class="stat-item">Mean: ${(valuesInDays.reduce((a, b) => a + b, 0) / valuesInDays.length).toFixed(2)} days</div>
-            <div class="stat-item">Median: ${valuesInDays.sort((a, b) => a - b)[Math.floor(valuesInDays.length / 2)].toFixed(2)} days</div>
+            <div class="stat-item">Median: ${[...valuesInDays].sort((a, b) => a - b)[Math.floor(valuesInDays.length / 2)].toFixed(2)} days</div>
         </div>
         
         <div id="histogram" class="plot-container"></div>
@@ -619,7 +619,7 @@ function generateInteractiveHistogram(timeDiffStats, title, filename) {
             type: 'histogram',
             xbins: {
                 start: 0,
-                end: Math.max(...data) + 10,
+                end: data.reduce((a, b) => Math.max(a, b), -Infinity) + 10,
                 size: 10
             },
             name: 'Distribution',
