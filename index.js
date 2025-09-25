@@ -467,8 +467,7 @@ function getPercentileTimestamp(stat, toDate=true){
     return percentilesObject;
 }
 
-function getPercentileDays(stat){
-    const percentiles = [1,5,25,50,75,95,99];
+function getPercentileDays(stat, percentiles=[1,5,25,50,75,95,99]){
     let percentilesObject = {};
     percentiles.forEach(percentile=>{
         percentilesObject[percentile] = (stat.percentile(percentile)/(60*60*24)).toFixed(2);
@@ -506,9 +505,9 @@ function generateReport(){
     if (args.dateStats && dateStats.timestamp.length>0){
         mainLogger.info(`First timestamps: ${JSON.stringify(getPercentileTimestamp(dateStats.timestampFirst))}`);
         mainLogger.info(`Last timestamps: ${JSON.stringify(getPercentileTimestamp(dateStats.timestamp))}`);
-        mainLogger.info(`Diff between first and last timestamps: ${JSON.stringify(getPercentileDays(dateStats.timestampDiff, false))}`);
-        mainLogger.info(`Days diff current: ${JSON.stringify(getPercentileDays(dateStats.timeDiff))}`);
-        mainLogger.info(`Days diff historical: ${JSON.stringify(getPercentileDays(dateStats.timeDiffHistorical))}`);
+        mainLogger.info(`Diff between first and last timestamps: ${JSON.stringify(getPercentileDays(dateStats.timestampDiff, [1,5,20,25,30,35,40,45,50,55,60,65,70,75,80,95,99]))}`);
+        mainLogger.info(`Days diff current: ${JSON.stringify(getPercentileDays(dateStats.timeDiff, [1,5,20,25,30,35,40,45,50,55,60,65,70,75,80,95,99]))}`);
+        mainLogger.info(`Days diff historical: ${JSON.stringify(getPercentileDays(dateStats.timeDiffHistorical, [1,5,20,25,30,35,40,45,50,55,60,65,70,75,80,95,99]))}`);
         mainLogger.info(`Number of empty responses for date stats: ${dateStats.empty}`);
         mainLogger.info(`Number of requests with limit greater than default (10): ${dateStats.numberOfRequestsWithLimitGreaterThanDefault}`);
         mainLogger.info(`Number of requests with limit/pageSize greater than default (10): ${dateStats.numberOfRequestsWithLimitGreaterThanDefault}. Percent: ${(100*dateStats.numberOfRequestsWithLimitGreaterThanDefault/(numberOfSuccessfulEvents+numberOfFailedEvents)).toFixed(2)}%.`);
