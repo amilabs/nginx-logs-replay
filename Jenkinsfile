@@ -29,9 +29,10 @@ pipeline {
         }
     }
     post {
-        success {
+        always {
             script {
                 // Проверяем, существует ли HTML файл
+                sh 'ls -la'
                 if (fileExists('time_diff_histogram.html')) {
                     // Архивируем HTML файл как артефакт
                     archiveArtifacts artifacts: 'time_diff_histogram.html', fingerprint: true
@@ -52,8 +53,6 @@ pipeline {
                     echo 'TimeDiff histogram file not found - skipping artifact archiving and HTML report publishing'
                 }
             }
-        }
-        always {
             cleanWs()
         }
     }
