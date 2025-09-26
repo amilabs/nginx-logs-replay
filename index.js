@@ -696,19 +696,45 @@ function generateInteractiveHistogram(timeDiffStats, title, filename) {
         
         // Создаем накопительный график по диапазонам дней
         function createCumulativeChart() {
+            // Фильтруем данные от некорректных значений
+            const validData = data.filter(val => val != null && isFinite(val) && !isNaN(val));
+            
+            // Проверяем, есть ли корректные данные
+            if (validData.length === 0) {
+                console.error('No valid data found');
+                return { trace: {}, layout: {} };
+            }
+            
             // Сортируем данные по возрастанию
-            const sortedData = [...data].sort((a, b) => a - b);
+            const sortedData = [...validData].sort((a, b) => a - b);
             
             // Создаем диапазоны (например, по 10 дней)
             const rangeSize = 10;
-            const maxValue = Math.max(...sortedData);
+            
+            // Берем последний элемент отсортированного массива (максимальное значение)
+            const maxValue = sortedData[sortedData.length - 1];
+            
+            // Дополнительная проверка на корректность maxValue
+            if (!isFinite(maxValue) || isNaN(maxValue)) {
+                console.error('Invalid maxValue:', maxValue);
+                return { trace: {}, layout: {} };
+            }
+            
+            // Ограничиваем максимальное количество диапазонов для предотвращения переполнения стека
+            const maxRanges = 1000;
+            const actualMaxValue = Math.min(maxValue, maxRanges * rangeSize);
+            
+            console.log('Max value:', maxValue, 'Limited to:', actualMaxValue);
+            
             const ranges = [];
             const cumulativeCounts = [];
             const labels = [];
             
             let cumulativeSum = 0;
+            let iterationCount = 0;
             
-            for (let i = rangeSize; i <= maxValue + rangeSize; i += rangeSize) {
+            for (let i = rangeSize; i <= actualMaxValue + rangeSize && iterationCount < maxRanges; i += rangeSize) {
+                iterationCount++;
                 const rangeStart = i - rangeSize;
                 const rangeEnd = i;
                 
@@ -771,7 +797,14 @@ function generateInteractiveHistogram(timeDiffStats, title, filename) {
         // Создаем графики
         Plotly.newPlot('histogram', [histogramTrace], histogramLayout, histogramConfig);
         Plotly.newPlot('boxplot', [boxplotTrace], boxplotLayout, histogramConfig);
-        Plotly.newPlot('cumulative', [cumulativeChart.trace], cumulativeChart.layout, histogramConfig);
+        
+        // Проверяем, что накопительный график корректно создан
+        if (cumulativeChart.trace && Object.keys(cumulativeChart.trace).length > 0) {
+            Plotly.newPlot('cumulative', [cumulativeChart.trace], cumulativeChart.layout, histogramConfig);
+        } else {
+            console.error('Failed to create cumulative chart');
+            document.getElementById('cumulative').innerHTML = '<div style="text-align: center; padding: 50px;">Failed to create cumulative chart</div>';
+        }
     </script>
 </body>
 </html>`;
