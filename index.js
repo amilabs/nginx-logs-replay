@@ -620,8 +620,8 @@ function generateInteractiveHistogram(timeDiffStats, title, filename) {
             type: 'histogram',
             xbins: {
                 start: 0,
-                end: data.reduce((a, b) => Math.max(a, b), -Infinity) + 25,
-                size: 25
+                end: data.reduce((a, b) => Math.max(a, b), -Infinity) + 10,
+                size: 10
             },
             name: 'Distribution',
             marker: {
@@ -700,7 +700,7 @@ function generateInteractiveHistogram(timeDiffStats, title, filename) {
             const sortedData = [...data].sort((a, b) => a - b);
             
             // Создаем диапазоны (например, по 10 дней)
-            const rangeSize = 25;
+            const rangeSize = 10;
             const maxValue = Math.max(...sortedData);
             const ranges = [];
             const cumulativeCounts = [];
