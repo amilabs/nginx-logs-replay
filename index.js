@@ -374,7 +374,7 @@ function parseResponse(response, method, url, sendTime, agent, originalStatus, t
                                 }
                             }
                         }
-                    }else if(url.includes("/service/service.php?data=")){
+                    }else if(url.includes("/service/service.php?")){
                         if (response.data.transfers.length>0){
                             lastTimestamp = response.data.transfers[response.data.transfers.length-1].timestamp;
                             firstTimestamp = response.data.transfers[0].timestamp;
