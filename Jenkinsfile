@@ -68,7 +68,7 @@ pipeline {
                 sh '''
                     docker run --rm --network=host -v "$WORK:/work" "$IMAGE" \
                         -e PREFIX="$PREFIX" -e QUERY_PARAMS="$QUERY_PARAMS" -e CACHE_BUSTER=cb -e DEBUG_TIME_UNIT=s \
-                        -e NO_COLOR=1 $EXTRA_ENV /app/src/discover.ts
+                        -e DISCOVER_N=20 -e NO_COLOR=1 $EXTRA_ENV /app/src/discover.ts
                 '''
             }
         }
