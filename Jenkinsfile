@@ -1,3 +1,5 @@
+// Jenkins job: scripts/nginx-logs-replay (DSL in devops: terraform/modules/jenkins/jobs/root/scripts/nginx-logs-replay.yaml).
+// Keep the parameters block in sync with that DSL file.
 pipeline {
     agent { label "${params.AGENT}" }
     options {
@@ -5,16 +7,16 @@ pipeline {
         timestamps()
     }
     parameters {
-        choice(name: 'AGENT', choices: ['agent1', 'agent2', 'agent3'], description: 'Agent to run the load from')
-        file(name: 'FILE', description: 'nginx access log (plain or .gz)')
-        string(name: 'PREFIX', defaultValue: 'https://api.example.com', description: 'Target base URL')
-        choice(name: 'MODE', choices: ['replay', 'rate'], description: 'replay = log timeline, rate = fixed RPS')
-        string(name: 'RATIO', defaultValue: '1', description: 'replay: speed multiplier')
+        choice(name: 'AGENT', choices: ['builder', 'docker-ds84', 'jen01', 's3-01', 's3-02'], description: 'Agent to generate the load from (needs docker)')
+        stashedFile(name: 'FILE', description: 'nginx access log (plain or .gz). Empty = examples/access.log smoke run')
+        string(name: 'PREFIX', defaultValue: 'https://ethp.amilabs.net', description: 'Target base URL')
+        choice(name: 'MODE', choices: ['replay', 'rate'], description: 'replay = log timeline x RATIO, rate = fixed RPS from the same requests')
+        string(name: 'RATIO', defaultValue: '1', description: 'replay: speed multiplier (2 = twice as fast)')
         string(name: 'RPS', defaultValue: '10', description: 'rate: requests per second')
-        string(name: 'DURATION', defaultValue: '60s', description: 'rate: duration')
+        string(name: 'DURATION', defaultValue: '60s', description: 'rate: duration (60s, 5m)')
         string(name: 'VUS', defaultValue: '50', description: 'max concurrency (replay) / pre-allocated VUs (rate)')
-        booleanParam(name: 'DISCOVER', defaultValue: true, description: 'Run discover.ts first to build the debug schema')
-        string(name: 'EXTRA_ENV', defaultValue: '', description: 'Extra k6 -e options, e.g. "-e CACHE_BUSTER=cb -e QUERY_PARAMS=apiKey=x"')
+        booleanParam(name: 'DISCOVER', defaultValue: true, description: 'Run discover.ts first to build the debug schema (per-component metrics)')
+        string(name: 'EXTRA_ENV', defaultValue: '-e CACHE_BUSTER=cb', description: 'Extra k6 -e options, e.g. "-e QUERY_PARAMS=apiKey=x -e FILTER_ONLY=/getAddress"')
     }
     environment {
         IMAGE = "nginx-logs-replay:${env.BUILD_NUMBER}"
@@ -28,13 +30,24 @@ pipeline {
         }
         stage('Prepare log') {
             steps {
-                sh 'rm -rf "$WORK" && mkdir -p "$WORK"'
-                unstash 'FILE'
+                sh 'rm -rf "$WORK" && mkdir -p "$WORK" && chmod 777 "$WORK"'
                 script {
-                    if (env.FILE_FILENAME?.endsWith('.gz')) {
-                        sh 'gunzip -c FILE > "$WORK/access.log"'
+                    def uploaded = false
+                    try {
+                        unstash 'FILE'
+                        uploaded = fileExists('FILE') && env.FILE_FILENAME
+                    } catch (ignored) {
+                        echo 'No FILE parameter uploaded'
+                    }
+                    if (uploaded) {
+                        if (env.FILE_FILENAME.endsWith('.gz')) {
+                            sh 'gunzip -c FILE > "$WORK/access.log"'
+                        } else {
+                            sh 'mv FILE "$WORK/access.log"'
+                        }
                     } else {
-                        sh 'mv FILE "$WORK/access.log"'
+                        echo 'Using examples/access.log (smoke run)'
+                        sh 'cp examples/access.log "$WORK/access.log"'
                     }
                 }
                 sh 'wc -l "$WORK/access.log"'
