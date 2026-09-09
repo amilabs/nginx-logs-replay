@@ -44,6 +44,8 @@ describe('buildLoadPlan', () => {
     });
     expect(load.offsets).toHaveLength(10);
     expect(load.plannedMs).toBe(4500);
+    expect(load.loadEdges).toEqual([1, 2]);
+    expect(load.loadTags).toEqual(['1', '2', '2', '2', '2', '2', '2', '2', '2', '2']);
   });
 
   it('replay: VUs grow with the peak and the probe latency', () => {
@@ -75,6 +77,8 @@ describe('buildLoadPlan', () => {
     });
     expect(load.peakRps).toBe(25);
     expect(load.plannedMs).toBeNull();
+    expect(load.loadEdges).toEqual([25]);
+    expect(load.loadTags).toEqual([]);
   });
 
   it('rate: auto VUs from RPS', () => {
@@ -90,6 +94,7 @@ describe('buildOptions', () => {
     const options = buildOptions({ config, load, topEndpoints: [{ endpoint: '/a', count: 2 }] });
     expect(Object.keys(options.scenarios as object)).toEqual([SCENARIO_NAME]);
     expect(options.thresholds).toHaveProperty('http_reqs{endpoint:/a}');
+    expect(options.thresholds).toHaveProperty('http_req_duration{load:2}');
     expect(options.insecureSkipTLSVerify).toBe(true);
     expect(options.userAgent).toBe('bench');
     expect(options.summaryTrendStats).toContain('p(99.9)');

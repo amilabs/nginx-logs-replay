@@ -47,6 +47,15 @@ export const data: K6SummaryData = {
     'http_req_duration{endpoint:/b}': trend(80, 200, 300, 400, 70),
     'http_req_failed{endpoint:/b}': rateMetric(0.25),
     'http_reqs{endpoint:/never}': counter(0),
+    'http_reqs{load:3}': counter(60),
+    'http_req_duration{load:3}': trend(40, 60, 90, 120, 38),
+    'http_req_failed{load:3}': rateMetric(0),
+    'http_reqs{load:6}': counter(40),
+    'http_req_duration{load:6}': trend(45, 80, 120, 150, 40),
+    'http_req_failed{load:6}': rateMetric(0),
+    'http_reqs{load:12}': counter(30),
+    'http_req_duration{load:12}': trend(300, 900, 1500, 2000, 250),
+    'http_req_failed{load:12}': rateMetric(0),
   },
 };
 
@@ -123,6 +132,13 @@ describe('buildReport', () => {
     expect(report.endpoints[1]).toMatchObject({ endpoint: '/b', count: 20, failedRate: 0.25, mismatches: 0 });
   });
 
+  it('finds the load knee and recommends the next ratio', () => {
+    expect(report.capacity.rows.map((r) => r.upToRps)).toEqual([3, 6, 12]);
+    expect(report.capacity).toMatchObject({ referenceP95: 60, healthyUpToRps: 6, degradedFromRps: 12, nextRatio: 1, safeRatio: 1 });
+    expect(report.capacity.verdict).toContain('Healthy up to ~6 rps, degraded from ~12 rps');
+    expect(report.capacity.verdict).toContain('The log peaks at 6 rps, so the highest RATIO without degradation is about x1');
+  });
+
   it('reports debug health', () => {
     expect(report.debug).toEqual({ enabled: true, missing: 2, unknownPaths: 0 });
   });
@@ -173,6 +189,24 @@ describe('buildReport', () => {
     expect(rateReport.components).toEqual([]);
     expect(rateReport.debug.enabled).toBe(false);
     expect(rateReport.endpoints).toEqual([]);
+    expect(rateReport.capacity.rows).toEqual([]);
+    expect(rateReport.capacity.verdict).toContain('Not enough data');
+  });
+
+  it('judges a rate run against the probe baseline', () => {
+    const rateData: K6SummaryData = {
+      metrics: {
+        http_reqs: counter(50, 5),
+        http_req_duration: trend(40, 90, 120, 150, 38),
+        'http_reqs{load:5}': counter(50),
+        'http_req_duration{load:5}': trend(40, 90, 120, 150, 38),
+        'http_req_failed{load:5}': rateMetric(0),
+      },
+    };
+    const okRun = buildReport(rateData, { ...ctx, config: parseConfig({ PREFIX: 'http://h', MODE: 'rate', RPS: '5' }), targetRps: 5, plannedMs: null, probeAvgMs: 60 });
+    expect(okRun.capacity.verdict).toContain('No degradation at 5 rps (p95 90ms vs 60ms baseline). Try RPS=8');
+    const slowRun = buildReport(rateData, { ...ctx, config: parseConfig({ PREFIX: 'http://h', MODE: 'rate', RPS: '5' }), targetRps: 5, plannedMs: null, probeAvgMs: 10 });
+    expect(slowRun.capacity.verdict).toContain('Degraded at 5 rps: p95 90ms vs 10ms baseline. Try RPS=4');
   });
 });
 
@@ -189,6 +223,9 @@ describe('renderReport', () => {
     expect(text).toMatch(/ttfb\s+1\.00ms\s+45\.0ms/);
     expect(text).toContain('status != log by pair (log→replay): 429→200 ×2, 200→503 ×1');
     expect(text).toContain('schedule lag p95 20.0ms  max 60.0ms');
+    expect(text).toContain('LOAD vs LATENCY');
+    expect(text).toMatch(/12\s+30\s+0\.00%\s+250ms\s+900ms\s+1\.50s\s+2\.00s\s+degraded/);
+    expect(text).toContain('Next run: RATIO=1');
     expect(text).toContain('COMPONENTS');
     expect(text).toMatch(/clickhouse\s+1\.00ms\s+30\.0ms\s+30\.0ms\s+90\.0ms\s+90\.0ms\s+200ms\s+700ms\s+120/);
     expect(text).toContain('2 responses without a debug block');

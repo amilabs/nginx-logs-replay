@@ -89,7 +89,8 @@ export default function (): void {
   if (!entry) return;
   if (config.mode === 'replay') waitForSlot(index);
   const nonce = `${exec.vu.idInTest}-${exec.vu.iterationInScenario}-${Date.now()}`;
-  performRequest(requestContext, entry, nonce);
+  const loadBucket = config.mode === 'rate' ? String(load.loadEdges[0] ?? '') : (load.loadTags[index] ?? '');
+  performRequest(requestContext, entry, nonce, { load: loadBucket });
 }
 
 export function handleSummary(data: K6SummaryData): Record<string, string> {

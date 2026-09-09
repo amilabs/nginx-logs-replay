@@ -49,7 +49,10 @@ describe('renderHtmlReport', () => {
 
   it('renders components and endpoints with charts and rps', () => {
     expect(html).toContain('clickhouse');
-    expect((html.match(/<svg/g) ?? []).length).toBe(4);
+    expect((html.match(/<svg/g) ?? []).length).toBe(5);
+    expect(html).toContain('Load vs latency');
+    expect(html).toContain('Next run: RATIO=1 (highest RATIO without degradation seen here: x1)');
+    expect(html).toContain('<td>≤ 12</td><td>30</td>');
     expect(html).toMatch(/<td>\/a<\/td><td>100<\/td><td>8\.33<\/td>/);
     expect(html).toContain('href="k6-dashboard.html"');
     expect(html).toContain('generated 2026-09-09T00:00:00Z');
@@ -85,6 +88,6 @@ describe('renderHtmlReport', () => {
   it('explains a missing schema', () => {
     const noSchema = renderHtmlReport(buildReport(data, { ...ctx, schema: null }), 15);
     expect(noSchema).toContain('No debug schema');
-    expect((noSchema.match(/<svg/g) ?? []).length).toBe(3);
+    expect((noSchema.match(/<svg/g) ?? []).length).toBe(4);
   });
 });

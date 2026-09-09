@@ -108,6 +108,18 @@ limiter; replaying them hits the backend harder than production did, so use
 `SKIP_STATUSES=429,5xx` for a faithful load. 4xx are normal replayed answers;
 only 5xx and transport errors count as failed.
 
+## Finding the point of no degradation
+
+Every replayed request is tagged with the load it was fired at (requests due in
+the same wall-clock second, on the compressed timeline). The summary groups
+latency by that load in 8 buckets up to the busiest second and marks a bucket
+as degraded when its p95 exceeds twice the p95 of the lowest bucket (+50ms)
+or more than 1% of its requests failed. The last healthy bucket is the knee;
+divided by the log's own peak rps it becomes the highest `RATIO` without
+degradation, printed as `Next run: RATIO=…`. When nothing degrades the
+report suggests `RATIO × 1.5`. Rate mode compares the run with the discover
+probe latency and suggests the next `RPS` instead.
+
 ## Component metrics (the "who is slow" table)
 
 If responses are JSON with a debug block like

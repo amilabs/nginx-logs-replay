@@ -5,7 +5,7 @@
 
 import { fmtBytes, fmtDuration, fmtMs, fmtNum, fmtPct } from './format.ts';
 import { barChart, escapeHtml, type BarRow } from './html-charts.ts';
-import { capacityWarning, type ComponentRow, type EndpointRow, type HeaderSection, type HttpSection, type Percentiles, type Report } from './summary.ts';
+import { capacityWarning, type CapacitySection, type ComponentRow, type EndpointRow, type HeaderSection, type HttpSection, type Percentiles, type Report } from './summary.ts';
 
 export interface HtmlReportOptions {
   readonly title?: string;
@@ -42,6 +42,10 @@ table.kv td { text-align: left; }
 .legend { color: #6b7280; font-size: 12px; margin-bottom: 4px; }
 .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin: 0 4px 0 10px; vertical-align: -1px; }
 .note { background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 8px 12px; margin: 8px 0; }
+.verdict { border-radius: 8px; padding: 12px 14px; margin: 8px 0 16px; font-size: 15px; }
+.verdict.good { background: #ecfdf5; border: 1px solid #a7f3d0; }
+.verdict.knee { background: #fff7ed; border: 1px solid #fed7aa; }
+.verdict b { display: block; margin-bottom: 4px; }
 .two { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 @media (max-width: 900px) { .two { grid-template-columns: 1fr; } }
 footer { color: #9ca3af; font-size: 12px; margin-top: 28px; }
@@ -150,6 +154,36 @@ ${barChart(rows, { labelWidth: 80 })}
 </tbody></table>`;
 }
 
+function renderCapacity(cap: CapacitySection): string {
+  const cls = cap.degradedFromRps === null ? 'good' : 'knee';
+  const headline =
+    cap.nextRatio !== null
+      ? `Next run: RATIO=${cap.nextRatio}${cap.safeRatio !== null && cap.degradedFromRps !== null ? ` (highest RATIO without degradation seen here: x${cap.safeRatio})` : ''}`
+      : 'Next run';
+  const verdict = `<div class="verdict ${cls}"><b>${escapeHtml(headline)}</b>${escapeHtml(cap.verdict)}</div>`;
+  if (cap.rows.length === 0) return `<h2>Load vs latency</h2>${verdict}`;
+  const bars: BarRow[] = cap.rows.map((r) => ({
+    label: `≤ ${r.upToRps} rps (${r.count} req)`,
+    value: r.duration.p95,
+    overlay: r.duration.p50,
+    text: `p95 ${fmtMs(r.duration.p95)} · p50 ${fmtMs(r.duration.p50)}`,
+    alert: cap.degradedFromRps !== null && r.upToRps >= cap.degradedFromRps,
+  }));
+  const table = cap.rows
+    .map(
+      (r) =>
+        `<tr><td>≤ ${r.upToRps}</td><td>${r.count}</td><td class="${r.failedRate > 0.01 ? 'bad' : ''}">${fmtPct(r.failedRate)}</td>${pctCells(r.duration)}<td class="${cap.degradedFromRps !== null && r.upToRps >= cap.degradedFromRps ? 'bad' : 'ok'}">${cap.degradedFromRps !== null && r.upToRps >= cap.degradedFromRps ? 'degraded' : 'ok'}</td></tr>`,
+    )
+    .join('\n');
+  return `<h2>Load vs latency <small>(offered rps in the second each request was due → its latency; degraded = p95 above 2× the low-load p95 or &gt;1% failed)</small></h2>
+${verdict}
+<div class="legend"><i style="background:#60a5fa"></i>p95 <i style="background:#1d4ed8"></i>p50 <i style="background:#ef4444"></i>degraded</div>
+${barChart(bars, { labelWidth: 170 })}
+<table><thead><tr><th>offered load</th><th>requests</th><th>failed</th>${pctHeaderCells()}<th></th></tr></thead><tbody>
+${table}
+</tbody></table>`;
+}
+
 function renderComponents(report: Report): string {
   const d = report.debug;
   if (!d.enabled) return `<h2>Components</h2><div class="note">No debug schema: run <code>discover.ts</code> first to get per-component metrics.</div>`;
@@ -227,6 +261,7 @@ ${dashboard}
 ${renderCards(h, report.http, capacityWarning(report))}
 ${renderRun(h, report.http)}
 ${renderMismatches(report.http)}
+${renderCapacity(report.capacity)}
 ${renderLatency(report.http)}
 ${renderComponents(report)}
 ${renderEndpoints(report.endpoints, top)}

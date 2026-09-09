@@ -3,6 +3,7 @@
  * console text. The same model feeds html-report.ts. Pure.
  */
 
+import { analyzeCapacity, recommendRatio, recommendRps, type LoadRow } from './capacity.ts';
 import type { Config } from './config.ts';
 import type { DebugSchema } from './debug-walker.ts';
 import { fmtBytes, fmtDuration, fmtMs, fmtNum, fmtPct, palette, table } from './format.ts';
@@ -134,9 +135,23 @@ export interface DebugSection {
   readonly unknownPaths: number;
 }
 
+export interface CapacitySection {
+  /** Latency by offered load, ascending. */
+  readonly rows: readonly LoadRow[];
+  readonly referenceP95: number | null;
+  readonly healthyUpToRps: number | null;
+  readonly degradedFromRps: number | null;
+  readonly verdict: string;
+  /** RATIO for the next replay, when one can be recommended. */
+  readonly nextRatio: number | null;
+  /** Highest RATIO without degradation seen in this run. */
+  readonly safeRatio: number | null;
+}
+
 export interface Report {
   readonly header: HeaderSection;
   readonly http: HttpSection;
+  readonly capacity: CapacitySection;
   readonly components: readonly ComponentRow[];
   readonly endpoints: readonly EndpointRow[];
   readonly debug: DebugSection;
@@ -301,6 +316,43 @@ function buildEndpoints(data: K6SummaryData, testDurationMs: number): EndpointRo
     .sort((a, b) => b.count - a.count || a.endpoint.localeCompare(b.endpoint));
 }
 
+const LOAD_RE = /^http_reqs\{load:(\d+)\}$/;
+
+function loadRows(data: K6SummaryData): LoadRow[] {
+  const rows: LoadRow[] = [];
+  for (const name of Object.keys(data.metrics)) {
+    const match = LOAD_RE.exec(name);
+    if (!match) continue;
+    const edge = Number(match[1]);
+    const count = num(metricValue(data, name, 'count'));
+    if (count === 0) continue;
+    rows.push({
+      upToRps: edge,
+      count,
+      failedRate: num(metricValue(data, `http_req_failed{load:${edge}}`, 'rate')),
+      duration: percentiles(data, `http_req_duration{load:${edge}}`) ?? EMPTY,
+    });
+  }
+  return rows.sort((a, b) => a.upToRps - b.upToRps);
+}
+
+function buildCapacity(data: K6SummaryData, header: HeaderSection): CapacitySection {
+  const analysis = analyzeCapacity(loadRows(data));
+  const recommendation =
+    header.mode === 'replay'
+      ? recommendRatio(analysis, header.ratio, header.ratio > 0 ? header.targetRps / header.ratio : 0)
+      : recommendRps(analysis.rows[0], header.rps, header.probeAvgMs);
+  return {
+    rows: analysis.rows,
+    referenceP95: analysis.referenceP95,
+    healthyUpToRps: analysis.healthyUpToRps,
+    degradedFromRps: analysis.degradedFromRps,
+    verdict: recommendation.verdict,
+    nextRatio: recommendation.nextRatio,
+    safeRatio: recommendation.safeRatio,
+  };
+}
+
 function buildDebug(data: K6SummaryData, schema: DebugSchema | null): DebugSection {
   return {
     enabled: schema !== null,
@@ -315,6 +367,7 @@ export function buildReport(data: K6SummaryData, ctx: ReportContext): Report {
   return {
     header,
     http: buildHttp(data, header),
+    capacity: buildCapacity(data, header),
     components: buildComponents(data, ctx.schema),
     endpoints: buildEndpoints(data, header.testDurationMs),
     debug: buildDebug(data, ctx.schema),
@@ -401,6 +454,28 @@ export function capacityWarning(report: Report): string | null {
   return `${facts.join('. ')}. ${cause}. ${advice}.`;
 }
 
+function renderCapacity(cap: CapacitySection, colors: boolean): string {
+  const c = palette(colors);
+  const title = `${c.bold('LOAD vs LATENCY')} ${c.dim('(offered rps in the request\'s second → latency)')}`;
+  if (cap.rows.length === 0) return `${title}\n${c.dim(cap.verdict)}`;
+  const body = table(
+    ['up to rps', 'requests', 'failed', 'p50', 'p95', 'p99', 'max', ''],
+    cap.rows.map((r) => [
+      String(r.upToRps),
+      String(r.count),
+      fmtPct(r.failedRate),
+      fmtMs(r.duration.p50),
+      fmtMs(r.duration.p95),
+      fmtMs(r.duration.p99),
+      fmtMs(r.duration.max),
+      cap.degradedFromRps !== null && r.upToRps >= cap.degradedFromRps ? c.red('degraded') : c.green('ok'),
+    ]),
+    ['right', 'right', 'right', 'right', 'right', 'right', 'right', 'left'],
+  );
+  const verdict = cap.degradedFromRps === null ? c.green(cap.verdict) : c.yellow(cap.verdict);
+  return [title, body, verdict].join('\n');
+}
+
 function renderComponents(rows: readonly ComponentRow[], debug: DebugSection, colors: boolean): string {
   const c = palette(colors);
   if (!debug.enabled) return `${c.bold('COMPONENTS')}\n${c.dim('no debug schema: run discover.ts first to get per-component metrics')}`;
@@ -437,6 +512,7 @@ export function renderReport(report: Report, top: number, colors: boolean): stri
   const sections = [
     renderHeader(report.header, colors),
     renderHttp(report.http, colors, capacityWarning(report)),
+    renderCapacity(report.capacity, colors),
     renderComponents(report.components, report.debug, colors),
     renderEndpoints(report.endpoints, top, colors),
   ].filter((section) => section !== '');

@@ -55,7 +55,7 @@ export function extractDebug(res: Response, debugField: string): unknown {
 }
 
 /** Sends the request and records custom metrics. Returns the k6 response. */
-export function performRequest(ctx: RequestContext, entry: PoolEntry, nonce: string): Response {
+export function performRequest(ctx: RequestContext, entry: PoolEntry, nonce: string, extraTags: Record<string, string> = {}): Response {
   const endpoint = endpointTag(entry.p, ctx.config.normalizeEndpoints);
   const url = buildUrl(entry.p, {
     prefix: ctx.config.prefix,
@@ -63,7 +63,7 @@ export function performRequest(ctx: RequestContext, entry: PoolEntry, nonce: str
     cacheBuster: ctx.config.cacheBuster,
     nonce,
   });
-  const tags = { endpoint, name: endpoint };
+  const tags = { endpoint, name: endpoint, ...extraTags };
   const res = http.request(entry.m, url, null, {
     headers: headersFor(ctx, entry),
     tags,

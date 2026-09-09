@@ -3,6 +3,7 @@
  * Pure: returns a plain object; replay.ts casts it to k6's Options type.
  */
 
+import { loadEdges, loadTag, offeredRps } from './capacity.ts';
 import type { Config } from './config.ts';
 import { allocateVus, buildOffsets, iterationsPerVu, peakRps, replayMaxDuration, replaySpanMs, type VuAllocation } from './schedule.ts';
 
@@ -26,8 +27,17 @@ export const STATUS_BUCKETS = [0, 200, 201, 204, 301, 302, 304, 400, 401, 403, 4
  * Always-passing thresholds so that k6 exposes sub-metrics in handleSummary:
  * per endpoint (top N) and per status mismatch pair (log status -> replayed bucket).
  */
-export function buildThresholds(endpoints: readonly EndpointCount[], logStatuses: readonly number[] = []): Thresholds {
+export function buildThresholds(
+  endpoints: readonly EndpointCount[],
+  logStatuses: readonly number[] = [],
+  loadBuckets: readonly number[] = [],
+): Thresholds {
   const entries: [string, readonly string[]][] = [];
+  for (const edge of loadBuckets) {
+    entries.push([`http_reqs{load:${edge}}`, ['count>=0']]);
+    entries.push([`http_req_duration{load:${edge}}`, ['max>=0']]);
+    entries.push([`http_req_failed{load:${edge}}`, ['rate>=0']]);
+  }
   for (const from of logStatuses) {
     for (const to of STATUS_BUCKETS) {
       if (to !== from) entries.push([`replay_status_mismatch{from:${from},to:${to}}`, ['count>=0']]);
@@ -53,6 +63,10 @@ export interface LoadPlan {
   /** Replay only: wall-clock offset per pool index (ms) and planned length. */
   readonly offsets: readonly number[];
   readonly plannedMs: number | null;
+  /** Upper edges (rps) of the offered-load buckets used for latency-by-load sub-metrics. */
+  readonly loadEdges: readonly number[];
+  /** Replay only: load bucket tag per pool index. */
+  readonly loadTags: readonly string[];
 }
 
 export interface LoadInput {
@@ -84,12 +98,16 @@ export function buildLoadPlan(input: LoadInput): LoadPlan {
       peakRps: config.rps,
       offsets: [],
       plannedMs: null,
+      loadEdges: [Math.ceil(config.rps)],
+      loadTags: [],
     };
   }
   const offsets = buildOffsets(timestamps);
   const peak = peakRps(offsets, config.ratio);
   const vus = allocateVus(peak, config.vus, config.maxVus, latency);
   const replayVus = Math.max(1, Math.min(vus.preAllocatedVUs, timestamps.length));
+  const edges = loadEdges(peak);
+  const loadTags = offeredRps(offsets, config.ratio).map((rps) => loadTag(rps, edges));
   return {
     scenario: {
       executor: 'per-vu-iterations',
@@ -103,6 +121,8 @@ export function buildLoadPlan(input: LoadInput): LoadPlan {
     peakRps: peak,
     offsets,
     plannedMs: replaySpanMs(offsets, config.ratio),
+    loadEdges: edges,
+    loadTags,
   };
 }
 
@@ -118,7 +138,7 @@ export interface OptionsInput {
 export function buildOptions(input: OptionsInput): Record<string, unknown> {
   return {
     scenarios: { [SCENARIO_NAME]: input.load.scenario },
-    thresholds: buildThresholds(input.topEndpoints, input.logStatuses ?? []),
+    thresholds: buildThresholds(input.topEndpoints, input.logStatuses ?? [], input.load.loadEdges),
     summaryTrendStats: [...TREND_STATS],
     insecureSkipTLSVerify: input.config.insecure,
     discardResponseBodies: false,
