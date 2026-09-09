@@ -57,7 +57,9 @@ export interface CapacityAnalysis {
   readonly degradedFromRps: number | null;
 }
 
-const MIN_SAMPLES = 30;
+const MIN_SAMPLES = 20;
+/** The reference p95 may not exceed this multiple of the discover probe latency. */
+const PROBE_REFERENCE_FACTOR = 3;
 const DEGRADATION_FACTOR = 2;
 const DEGRADATION_SLACK_MS = 50;
 const FAIL_LIMIT = 0.01;
@@ -67,16 +69,23 @@ export function isDegraded(row: LoadRow, referenceP95: number): boolean {
   return row.failedRate > FAIL_LIMIT || row.duration.p95 > referenceP95 * DEGRADATION_FACTOR + DEGRADATION_SLACK_MS;
 }
 
-/** Finds the knee in latency-by-load rows (ascending by upToRps). */
-export function analyzeCapacity(rows: readonly LoadRow[]): CapacityAnalysis {
+/**
+ * Finds the knee in latency-by-load rows (ascending by upToRps). The
+ * reference is the best p95 among populated buckets, capped at 3× the
+ * discover probe latency so a run that is saturated throughout (backlog even
+ * in its quiet seconds) does not set a slow "baseline".
+ */
+export function analyzeCapacity(rows: readonly LoadRow[], probeAvgMs: number | null = null): CapacityAnalysis {
   const sorted = [...rows].sort((a, b) => a.upToRps - b.upToRps);
-  const reference = sorted.find((r) => r.count >= MIN_SAMPLES) ?? sorted[0];
-  if (!reference) return { rows: sorted, referenceP95: null, healthyUpToRps: null, degradedFromRps: null };
-  const referenceP95 = reference.duration.p95;
+  const populated = sorted.filter((r) => r.count >= MIN_SAMPLES);
+  const candidates = populated.length > 0 ? populated : sorted;
+  if (candidates.length === 0) return { rows: sorted, referenceP95: null, healthyUpToRps: null, degradedFromRps: null };
+  const bestP95 = Math.min(...candidates.map((r) => r.duration.p95));
+  const referenceP95 = probeAvgMs !== null && probeAvgMs > 0 ? Math.min(bestP95, probeAvgMs * PROBE_REFERENCE_FACTOR) : bestP95;
   let healthy: number | null = null;
   let degradedFrom: number | null = null;
   for (const row of sorted) {
-    if (row.count < MIN_SAMPLES && row !== reference) continue;
+    if (row.count < MIN_SAMPLES && populated.length > 0) continue;
     if (isDegraded(row, referenceP95)) {
       degradedFrom = row.upToRps;
       break;
@@ -88,6 +97,8 @@ export function analyzeCapacity(rows: readonly LoadRow[]): CapacityAnalysis {
 
 export interface Recommendation {
   readonly verdict: string;
+  /** True when the whole run was over the limit (timeline lag / drops), so the knee is only a lower bound. */
+  readonly saturated: boolean;
   /** RATIO to run next (replay), rounded to one decimal. */
   readonly nextRatio: number | null;
   /** Highest RATIO with no degradation observed in this run, if a knee was found. */
@@ -100,7 +111,7 @@ function round1(value: number): number {
 
 /** Rate mode: one bucket; compare with the discover probe (or the run's own p50 when unknown). */
 export function recommendRps(row: LoadRow | undefined, rps: number, probeAvgMs: number | null): Recommendation {
-  if (!row || row.count === 0) return { verdict: 'Not enough data to judge this rate.', nextRatio: null, safeRatio: null };
+  if (!row || row.count === 0) return { verdict: 'Not enough data to judge this rate.', nextRatio: null, safeRatio: null, saturated: false };
   const reference = probeAvgMs !== null && probeAvgMs > 0 ? probeAvgMs : row.duration.p50;
   const degraded = isDegraded(row, reference);
   const ref = Math.round(reference);
@@ -110,6 +121,7 @@ export function recommendRps(row: LoadRow | undefined, rps: number, probeAvgMs: 
       verdict: `Degraded at ${rps} rps: p95 ${Math.round(row.duration.p95)}ms vs ${ref}ms baseline${row.failedRate > FAIL_LIMIT ? `, ${(row.failedRate * 100).toFixed(1)}% failed` : ''}. Try RPS=${next}.`,
       nextRatio: null,
       safeRatio: null,
+      saturated: true,
     };
   }
   const next = Math.round(rps * 1.5);
@@ -117,38 +129,55 @@ export function recommendRps(row: LoadRow | undefined, rps: number, probeAvgMs: 
     verdict: `No degradation at ${rps} rps (p95 ${Math.round(row.duration.p95)}ms vs ${ref}ms baseline). Try RPS=${next} to look for the limit.`,
     nextRatio: null,
     safeRatio: null,
+    saturated: false,
   };
 }
 
 /**
  * Turns the knee into advice for the next replay. `originalPeakRps` is the
- * busiest second of the log at ratio 1; `ratio` is this run's ratio.
+ * busiest second of the log at ratio 1; `ratio` is this run's ratio;
+ * `saturated` says the run as a whole was over the limit (timeline lag or
+ * dropped requests), in which case quiet seconds still carry backlog and the
+ * knee is only a lower bound, so the next step is a plain cut.
  */
-export function recommendRatio(analysis: CapacityAnalysis, ratio: number, originalPeakRps: number): Recommendation {
+export function recommendRatio(analysis: CapacityAnalysis, ratio: number, originalPeakRps: number, saturated = false): Recommendation {
   if (analysis.referenceP95 === null || analysis.rows.length === 0 || originalPeakRps <= 0) {
-    return { verdict: 'Not enough data to locate the degradation point.', nextRatio: null, safeRatio: null };
+    return { verdict: 'Not enough data to locate the degradation point.', nextRatio: null, safeRatio: null, saturated };
   }
   const ref = Math.round(analysis.referenceP95);
   if (analysis.degradedFromRps === null) {
     const next = round1(ratio * 1.5);
     return {
-      verdict: `No degradation up to the busiest second of this run (p95 stayed within 2× the ${ref}ms seen at low load). Try RATIO=${next} to look for the limit.`,
+      verdict: `No degradation up to the busiest second of this run (p95 stayed within 2× the ${ref}ms reference). Try RATIO=${next} to look for the limit.`,
       nextRatio: next,
       safeRatio: ratio,
+      saturated,
     };
   }
   if (analysis.healthyUpToRps === null) {
     const next = round1(Math.max(0.1, ratio / 2));
     return {
-      verdict: `Latency was degraded even at the lowest load of this run (from ${analysis.degradedFromRps} rps). Try RATIO=${next}.`,
+      verdict: `Latency was degraded even at the lowest load of this run (from ${analysis.degradedFromRps} rps, p95 > 2× the ${ref}ms reference). Try RATIO=${next}.`,
       nextRatio: next,
       safeRatio: null,
+      saturated,
     };
   }
   const safe = round1(Math.max(0.1, analysis.healthyUpToRps / originalPeakRps));
+  const knee = `Healthy up to ~${analysis.healthyUpToRps} rps, degraded from ~${analysis.degradedFromRps} rps (p95 > 2× the ${ref}ms reference). The log peaks at ${round1(originalPeakRps)} rps, so that is RATIO x${safe}.`;
+  if (saturated) {
+    const next = round1(Math.max(safe, ratio * 0.6));
+    return {
+      verdict: `${knee} This run was over the limit as a whole (requests fired late or were dropped), so quiet seconds still carried backlog and x${safe} is a lower bound. Next run: RATIO=${next}.`,
+      nextRatio: next,
+      safeRatio: safe,
+      saturated,
+    };
+  }
   return {
-    verdict: `Healthy up to ~${analysis.healthyUpToRps} rps, degraded from ~${analysis.degradedFromRps} rps (p95 > 2× the ${ref}ms seen at low load). The log peaks at ${round1(originalPeakRps)} rps, so the highest RATIO without degradation is about x${safe}. Next run: RATIO=${safe} to confirm.`,
+    verdict: `${knee} Next run: RATIO=${safe} to confirm.`,
     nextRatio: safe,
     safeRatio: safe,
+    saturated,
   };
 }

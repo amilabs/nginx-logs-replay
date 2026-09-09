@@ -46,6 +46,17 @@ describe('analyzeCapacity', () => {
     expect(a.degradedFromRps).toBe(132);
   });
 
+  it('anchors the reference to the discover probe when every bucket is slow', () => {
+    const rows = [row(28, 247, 28), row(56, 2348, 71), row(83, 2494, 2353), row(111, 3221, 7154), row(166, 9070, 1176)];
+    const a = analyzeCapacity(rows, 117);
+    expect(a.referenceP95).toBe(247);
+    expect(a.healthyUpToRps).toBe(28);
+    expect(a.degradedFromRps).toBe(56);
+    const noProbe = analyzeCapacity(rows.slice(1), null);
+    expect(noProbe.referenceP95).toBe(2348);
+    expect(analyzeCapacity(rows.slice(1), 117).referenceP95).toBe(351);
+  });
+
   it('reports no knee when nothing degrades', () => {
     const a = analyzeCapacity([row(44, 60), row(88, 70), row(132, 100)]);
     expect(a.degradedFromRps).toBeNull();
@@ -61,7 +72,17 @@ describe('recommendRatio', () => {
     expect(r.safeRatio).toBe(10);
     expect(r.nextRatio).toBe(10);
     expect(r.verdict).toContain('Healthy up to ~176 rps, degraded from ~220 rps');
-    expect(r.verdict).toContain('highest RATIO without degradation is about x10');
+    expect(r.verdict).toContain('so that is RATIO x10. Next run: RATIO=10 to confirm');
+    expect(r.saturated).toBe(false);
+  });
+
+  it('treats the knee as a lower bound and cuts by 0.6 when the run was saturated', () => {
+    const a = analyzeCapacity([row(28, 247, 28), row(56, 2348, 71), row(83, 2494, 2353), row(166, 9070, 1176)], 117);
+    const r = recommendRatio(a, 25, 8.8, true);
+    expect(r.safeRatio).toBe(3.2);
+    expect(r.nextRatio).toBe(15);
+    expect(r.verdict).toContain('x3.2 is a lower bound. Next run: RATIO=15');
+    expect(r.saturated).toBe(true);
   });
 
   it('suggests going up when nothing degraded and down when everything did', () => {

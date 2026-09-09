@@ -136,7 +136,7 @@ describe('buildReport', () => {
     expect(report.capacity.rows.map((r) => r.upToRps)).toEqual([3, 6, 12]);
     expect(report.capacity).toMatchObject({ referenceP95: 60, healthyUpToRps: 6, degradedFromRps: 12, nextRatio: 1, safeRatio: 1 });
     expect(report.capacity.verdict).toContain('Healthy up to ~6 rps, degraded from ~12 rps');
-    expect(report.capacity.verdict).toContain('The log peaks at 6 rps, so the highest RATIO without degradation is about x1');
+    expect(report.capacity.verdict).toContain('The log peaks at 6 rps, so that is RATIO x1. Next run: RATIO=1 to confirm');
   });
 
   it('reports debug health', () => {

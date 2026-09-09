@@ -336,11 +336,12 @@ function loadRows(data: K6SummaryData): LoadRow[] {
   return rows.sort((a, b) => a.upToRps - b.upToRps);
 }
 
-function buildCapacity(data: K6SummaryData, header: HeaderSection): CapacitySection {
-  const analysis = analyzeCapacity(loadRows(data));
+function buildCapacity(data: K6SummaryData, header: HeaderSection, http: HttpSection): CapacitySection {
+  const analysis = analyzeCapacity(loadRows(data), header.probeAvgMs);
+  const saturated = (http.lagP95 !== null && http.lagP95 > 1000) || http.dropped > 0;
   const recommendation =
     header.mode === 'replay'
-      ? recommendRatio(analysis, header.ratio, header.ratio > 0 ? header.targetRps / header.ratio : 0)
+      ? recommendRatio(analysis, header.ratio, header.ratio > 0 ? header.targetRps / header.ratio : 0, saturated)
       : recommendRps(analysis.rows[0], header.rps, header.probeAvgMs);
   return {
     rows: analysis.rows,
@@ -364,10 +365,11 @@ function buildDebug(data: K6SummaryData, schema: DebugSchema | null): DebugSecti
 /** Builds the report model from k6 summary data. */
 export function buildReport(data: K6SummaryData, ctx: ReportContext): Report {
   const header = buildHeader(data, ctx);
+  const http = buildHttp(data, header);
   return {
     header,
-    http: buildHttp(data, header),
-    capacity: buildCapacity(data, header),
+    http,
+    capacity: buildCapacity(data, header, http),
     components: buildComponents(data, ctx.schema),
     endpoints: buildEndpoints(data, header.testDurationMs),
     debug: buildDebug(data, ctx.schema),
