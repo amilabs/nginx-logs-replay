@@ -99,6 +99,7 @@ export function handleSummary(data: K6SummaryData): Record<string, string> {
     vus: { ...load.vus, preAllocatedVUs: load.replayVus },
     targetRps: load.peakRps,
     plannedMs: load.plannedMs,
+    probeAvgMs: schema?.probeAvgMs ?? null,
   });
   const outputs: Record<string, string> = {
     stdout: renderReport(report, config.top, config.colors),

@@ -62,7 +62,7 @@ function card(label: string, value: string, detail = '', cls = ''): string {
   return `<div class="card"><div class="k">${escapeHtml(label)}</div><div class="v ${cls}">${value}</div><div class="d">${detail}</div></div>`;
 }
 
-function renderCards(h: HeaderSection, s: HttpSection): string {
+function renderCards(h: HeaderSection, s: HttpSection, warning: string | null): string {
   const vus = h.vusAuto ? `auto VUs ${h.vus}` : `fixed VUs ${h.vus}`;
   const load =
     h.mode === 'replay'
@@ -84,9 +84,9 @@ ${card('p50', fmtMs(s.duration.p50), `avg ${fmtMs(s.duration.avg)}`)}
 ${card('p95', fmtMs(s.duration.p95), `p99 ${fmtMs(s.duration.p99)}`)}
 ${card('max', fmtMs(s.duration.max), `min ${fmtMs(s.duration.min)}`)}
 ${lag}
-${s.dropped > 0 ? card('Not sent', String(s.dropped), 'run hit its max duration', 'bad') : ''}
+${s.dropped > 0 ? card('Not sent', String(s.dropped), 'no free VU / max duration', 'bad') : ''}
 </div>
-${capacityWarning(s) ? `<div class="note"><b>Load generator bottleneck.</b> ${escapeHtml(capacityWarning(s) ?? '')}</div>` : ''}`;
+${warning ? `<div class="note">${escapeHtml(warning)}</div>` : ''}`;
 }
 
 function renderRun(h: HeaderSection, s: HttpSection): string {
@@ -213,7 +213,7 @@ export function renderHtmlReport(report: Report, top: number, options: HtmlRepor
 <h1>${escapeHtml(title)}</h1>
 <div class="sub">${escapeHtml(h.startedAt)} → ${escapeHtml(h.finishedAt)} · ${h.requests} requests in ${fmtDuration(h.testDurationMs)}</div>
 ${dashboard}
-${renderCards(h, report.http)}
+${renderCards(h, report.http, capacityWarning(report))}
 ${renderRun(h, report.http)}
 ${renderLatency(report.http)}
 ${renderComponents(report)}

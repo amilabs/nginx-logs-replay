@@ -32,6 +32,8 @@ export interface ReportContext {
   readonly targetRps: number;
   /** Planned wall-clock length of a replay (null for rate mode). */
   readonly plannedMs: number | null;
+  /** Average request duration measured by discover probes (ms), if known. */
+  readonly probeAvgMs?: number | null;
   /** Wall-clock end of the run; defaults to now. */
   readonly finishedAt?: Date;
 }
@@ -72,6 +74,7 @@ export interface HeaderSection {
   readonly maxVus: number;
   readonly vusAuto: boolean;
   readonly assumedLatencyMs: number;
+  readonly probeAvgMs: number | null;
   readonly requests: number;
 }
 
@@ -88,6 +91,7 @@ export interface HttpSection {
   readonly dataReceived: number;
   readonly dataSent: number;
   readonly avgBodyBytes: number;
+  readonly lagP50: number | null;
   readonly lagP95: number | null;
   readonly lagMax: number | null;
   /** Iterations k6 never started (replay hit max duration / rate mode had no free VU). */
@@ -188,6 +192,7 @@ function buildHeader(data: K6SummaryData, ctx: ReportContext): HeaderSection {
     maxVus: ctx.vus.maxVUs,
     vusAuto: ctx.vus.auto,
     assumedLatencyMs: ctx.vus.assumedLatencyMs,
+    probeAvgMs: ctx.probeAvgMs ?? null,
     requests: num(metricValue(data, 'http_reqs', 'count')),
   };
 }
@@ -217,6 +222,7 @@ function buildHttp(data: K6SummaryData, header: HeaderSection): HttpSection {
     dataReceived,
     dataSent: num(metricValue(data, 'data_sent', 'count')),
     avgBodyBytes: count > 0 ? dataReceived / count : 0,
+    lagP50: lagP95 === null ? null : metricValue(data, 'replay_lag_ms', 'med'),
     lagP95,
     lagMax: lagP95 === null ? null : metricValue(data, 'replay_lag_ms', 'max'),
     dropped,
@@ -316,7 +322,7 @@ function renderHeader(h: HeaderSection, colors: boolean): string {
   ].join('\n');
 }
 
-function renderHttp(s: HttpSection, colors: boolean): string {
+function renderHttp(s: HttpSection, colors: boolean, capacity: string | null): string {
   const c = palette(colors);
   const failed = s.failedRate > 0 ? c.red(`${s.failed} (${fmtPct(s.failedRate)})`) : c.green(fmtPct(s.failedRate));
   const mismatch = s.mismatches > 0 ? c.yellow(String(s.mismatches)) : String(s.mismatches);
@@ -330,19 +336,38 @@ function renderHttp(s: HttpSection, colors: boolean): string {
     const lag = `schedule lag p95 ${fmtMs(s.lagP95)}  max ${fmtMs(s.lagMax)}`;
     lines.push(num(s.lagP95) > 1000 ? c.yellow(lag) : c.dim(lag));
   }
-  const capacity = capacityWarning(s);
   if (capacity) lines.push(c.yellow(capacity));
   return lines.join('\n');
 }
 
-/** One-line diagnosis when the load generator, not the target, was the bottleneck. */
-export function capacityWarning(s: HttpSection): string | null {
-  const parts: string[] = [];
-  if (s.dropped > 0) parts.push(`${s.dropped} requests were never sent (run hit its max duration / no free VU)`);
-  if (s.lagP95 !== null && s.lagP95 > 1000) parts.push('requests fired late');
-  if (parts.length === 0 && s.suggestedVus === null) return null;
-  const advice = s.suggestedVus !== null ? `the load generator could not keep up: set VUS to about ${s.suggestedVus} or lower the rate` : 'the load generator could not keep up: raise VUS or lower the rate';
-  return `${parts.length > 0 ? `${parts.join(', ')}; ` : ''}${advice}`;
+/**
+ * Diagnosis when the schedule was not kept: what happened (late / dropped
+ * requests), why (slow target vs slow generator) and what to do about it.
+ */
+export function capacityWarning(report: Report): string | null {
+  const s = report.http;
+  const h = report.header;
+  const late = s.lagP95 !== null && s.lagP95 > 1000;
+  if (!late && s.dropped === 0 && s.suggestedVus === null) return null;
+  const facts: string[] = [];
+  if (late) {
+    facts.push(
+      `Timeline not kept: requests fired late by p50 ${fmtMs(s.lagP50)}, p95 ${fmtMs(s.lagP95)}, max ${fmtMs(s.lagMax)} because all ${h.vus} VUs were busy`,
+    );
+  }
+  if (s.dropped > 0) facts.push(`${s.dropped} requests were never sent (no free VU / max duration reached)`);
+  if (facts.length === 0) facts.push('Achieved rps stayed below the plan');
+  const reference = h.probeAvgMs ?? h.assumedLatencyMs;
+  const referenceLabel = h.probeAvgMs !== null ? 'during discover' : 'assumed';
+  const cause =
+    s.duration.p95 > reference * 3
+      ? `Responses were slow under load (p95 ${fmtMs(s.duration.p95)}, max ${fmtMs(s.duration.max)} vs ${fmtMs(reference)} ${referenceLabel}): the target saturated, which is a real finding, and the applied load was softer than planned`
+      : `Responses stayed fast (p95 ${fmtMs(s.duration.p95)}), so the load generator itself was the limit (agent CPU or too few VUs)`;
+  const advice =
+    s.suggestedVus !== null
+      ? `To force the exact timeline at these latencies set VUS to about ${s.suggestedVus}; otherwise lower RATIO/RPS`
+      : 'Raise VUS or lower RATIO/RPS';
+  return `${facts.join('. ')}. ${cause}. ${advice}.`;
 }
 
 function renderComponents(rows: readonly ComponentRow[], debug: DebugSection, colors: boolean): string {
@@ -380,7 +405,7 @@ function renderEndpoints(rows: readonly EndpointRow[], top: number, colors: bool
 export function renderReport(report: Report, top: number, colors: boolean): string {
   const sections = [
     renderHeader(report.header, colors),
-    renderHttp(report.http, colors),
+    renderHttp(report.http, colors, capacityWarning(report)),
     renderComponents(report.components, report.debug, colors),
     renderEndpoints(report.endpoints, top, colors),
   ].filter((section) => section !== '');

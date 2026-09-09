@@ -142,7 +142,12 @@ describe('buildReport', () => {
     expect(report.http.dropped).toBe(12_883);
     expect(report.http.suggestedVus).toBe(36);
     const text = renderReport(report, 15, false);
-    expect(text).toContain('12883 requests were never sent (run hit its max duration / no free VU), requests fired late; the load generator could not keep up: set VUS to about 36 or lower the rate');
+    expect(text).toContain('Timeline not kept: requests fired late by p50 50.00s, p95 92.12s, max 96.73s because all 5 VUs were busy');
+    expect(text).toContain('12883 requests were never sent');
+    expect(text).toContain('load generator itself was the limit');
+    expect(text).toContain('set VUS to about 36');
+    const saturated = buildReport({ ...slow, metrics: { ...slow.metrics, http_req_duration: trend(1200, 5227, 9000, 18047, 40) } }, { ...ctx, vus: { preAllocatedVUs: 227, maxVUs: 900, auto: true, assumedLatencyMs: 250 }, targetRps: 453, plannedMs: 120_000, probeAvgMs: 83.6 });
+    expect(renderReport(saturated, 15, false)).toContain('Responses were slow under load (p95 5.23s, max 18.05s vs 83.6ms during discover): the target saturated');
     expect(buildReport(data, ctx).http).toMatchObject({ dropped: 0, suggestedVus: null });
   });
 

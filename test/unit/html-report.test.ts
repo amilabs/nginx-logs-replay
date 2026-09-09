@@ -74,10 +74,10 @@ describe('renderHtmlReport', () => {
       metrics: { ...data.metrics, iteration_duration: trend(65, 176, 451, 1242, 39), dropped_iterations: counter(12_883) },
     };
     const out = renderHtmlReport(buildReport(slow, { ...ctx, config: parseConfig({ PREFIX: 'http://h', RATIO: '60', VUS: '5' }), targetRps: 368.76, plannedMs: 60_000 }), 15);
-    expect(out).toContain('Load generator bottleneck.');
     expect(out).toContain('12883 requests were never sent');
     expect(out).toContain('Not sent');
-    expect(html).not.toContain('Load generator bottleneck');
+    expect(html).not.toContain('never sent');
+    expect(html).not.toContain('Timeline not kept');
   });
 
   it('explains a missing schema', () => {
