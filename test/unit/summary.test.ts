@@ -114,6 +114,26 @@ describe('buildReport', () => {
     expect(report.debug).toEqual({ enabled: true, missing: 2, unknownPaths: 0 });
   });
 
+  it('diagnoses a load generator bottleneck with a VUS suggestion', () => {
+    const slow: K6SummaryData = {
+      state: { testRunDurationMs: 120_000 },
+      metrics: {
+        ...data.metrics,
+        http_reqs: counter(9237, 76.2),
+        iteration_duration: trend(65, 176, 451, 1242, 39),
+        dropped_iterations: counter(12_883),
+        replay_lag_ms: trend(50_000, 92_122, 95_000, 96_734),
+      },
+    };
+    const report = buildReport(slow, { ...ctx, config: parseConfig({ PREFIX: 'http://h', RATIO: '60', VUS: '5' }), pool: { ...ctx.pool, kept: 22_120, spanMs: 3_599_000, originalRps: 6.146 } });
+    expect(report.header.targetRps).toBeCloseTo(368.76, 1);
+    expect(report.http.dropped).toBe(12_883);
+    expect(report.http.suggestedVus).toBe(36);
+    const text = renderReport(report, 15, false);
+    expect(text).toContain('12883 requests were never sent (run hit its max duration), requests fired late; the client could not keep up: set VUS to about 36 or lower the rate');
+    expect(buildReport(data, ctx).http).toMatchObject({ dropped: 0, suggestedVus: null });
+  });
+
   it('prefers the allocated VU count when given', () => {
     expect(buildReport(data, { ...ctx, vus: 3 }).header.vus).toBe(3);
   });

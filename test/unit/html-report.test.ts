@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { parseConfig } from '../../src/lib/config.ts';
 import { barChart, escapeHtml } from '../../src/lib/html-charts.ts';
 import { renderHtmlReport } from '../../src/lib/html-report.ts';
 import { buildReport, type K6SummaryData } from '../../src/lib/summary.ts';
@@ -64,6 +65,18 @@ describe('renderHtmlReport', () => {
     const out = renderHtmlReport(buildReport(evil, ctx), 15);
     expect(out).toContain('/a/&lt;b&gt;');
     expect(out).not.toContain('/a/<b>');
+  });
+
+  it('flags a load generator bottleneck', () => {
+    const slow: K6SummaryData = {
+      state: { testRunDurationMs: 120_000 },
+      metrics: { ...data.metrics, iteration_duration: trend(65, 176, 451, 1242, 39), dropped_iterations: counter(12_883) },
+    };
+    const out = renderHtmlReport(buildReport(slow, { ...ctx, config: parseConfig({ PREFIX: 'http://h', RATIO: '60', VUS: '5' }) }), 15);
+    expect(out).toContain('Load generator bottleneck.');
+    expect(out).toContain('12883 requests were never sent');
+    expect(out).toContain('Not sent');
+    expect(html).not.toContain('Load generator bottleneck');
   });
 
   it('explains a missing schema', () => {

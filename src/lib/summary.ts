@@ -82,6 +82,10 @@ export interface HttpSection {
   readonly avgBodyBytes: number;
   readonly lagP95: number | null;
   readonly lagMax: number | null;
+  /** Iterations k6 never started (replay hit max duration / rate mode had no free VU). */
+  readonly dropped: number;
+  /** VUs that would have kept up: target rps × avg iteration time × 1.5 (null when not applicable). */
+  readonly suggestedVus: number | null;
 }
 
 export interface ComponentRow {
@@ -177,11 +181,16 @@ function buildHeader(data: K6SummaryData, ctx: ReportContext): HeaderSection {
   };
 }
 
-function buildHttp(data: K6SummaryData): HttpSection {
+function buildHttp(data: K6SummaryData, header: HeaderSection): HttpSection {
   const count = num(metricValue(data, 'http_reqs', 'count'));
   const failedRate = num(metricValue(data, 'http_req_failed', 'rate'));
   const lagP95 = metricValue(data, 'replay_lag_ms', 'p(95)');
   const dataReceived = num(metricValue(data, 'data_received', 'count'));
+  const dropped = num(metricValue(data, 'dropped_iterations', 'count'));
+  const iterationAvgMs = num(metricValue(data, 'iteration_duration', 'avg'));
+  const behind = (lagP95 !== null && lagP95 > 1000) || dropped > 0 || header.achievedRps < header.targetRps * 0.9;
+  const suggestedVus =
+    behind && header.targetRps > 0 && iterationAvgMs > 0 ? Math.ceil((header.targetRps * iterationAvgMs * 1.5) / 1000) : null;
   return {
     count,
     failedRate,
@@ -197,6 +206,8 @@ function buildHttp(data: K6SummaryData): HttpSection {
     avgBodyBytes: count > 0 ? dataReceived / count : 0,
     lagP95,
     lagMax: lagP95 === null ? null : metricValue(data, 'replay_lag_ms', 'max'),
+    dropped,
+    suggestedVus,
   };
 }
 
@@ -258,7 +269,7 @@ export function buildReport(data: K6SummaryData, ctx: ReportContext): Report {
   const header = buildHeader(data, ctx);
   return {
     header,
-    http: buildHttp(data),
+    http: buildHttp(data, header),
     components: buildComponents(data, ctx.schema),
     endpoints: buildEndpoints(data, header.testDurationMs),
     debug: buildDebug(data, ctx.schema),
@@ -303,9 +314,21 @@ function renderHttp(s: HttpSection, colors: boolean): string {
   ];
   if (s.lagP95 !== null) {
     const lag = `schedule lag p95 ${fmtMs(s.lagP95)}  max ${fmtMs(s.lagMax)}`;
-    lines.push(num(s.lagP95) > 1000 ? c.yellow(`${lag}  (client could not keep up: raise VUS or lower RATIO)`) : c.dim(lag));
+    lines.push(num(s.lagP95) > 1000 ? c.yellow(lag) : c.dim(lag));
   }
+  const capacity = capacityWarning(s);
+  if (capacity) lines.push(c.yellow(capacity));
   return lines.join('\n');
+}
+
+/** One-line diagnosis when the load generator, not the target, was the bottleneck. */
+export function capacityWarning(s: HttpSection): string | null {
+  const parts: string[] = [];
+  if (s.dropped > 0) parts.push(`${s.dropped} requests were never sent (run hit its max duration)`);
+  if (s.lagP95 !== null && s.lagP95 > 1000) parts.push('requests fired late');
+  if (parts.length === 0 && s.suggestedVus === null) return null;
+  const advice = s.suggestedVus !== null ? `the client could not keep up: set VUS to about ${s.suggestedVus} or lower the rate` : 'the client could not keep up: raise VUS or lower the rate';
+  return `${parts.length > 0 ? `${parts.join(', ')}; ` : ''}${advice}`;
 }
 
 function renderComponents(rows: readonly ComponentRow[], debug: DebugSection, colors: boolean): string {

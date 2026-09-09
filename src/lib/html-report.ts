@@ -5,7 +5,7 @@
 
 import { fmtBytes, fmtDuration, fmtMs, fmtNum, fmtPct } from './format.ts';
 import { barChart, escapeHtml, type BarRow } from './html-charts.ts';
-import type { ComponentRow, EndpointRow, HeaderSection, HttpSection, Percentiles, Report } from './summary.ts';
+import { capacityWarning, type ComponentRow, type EndpointRow, type HeaderSection, type HttpSection, type Percentiles, type Report } from './summary.ts';
 
 export interface HtmlReportOptions {
   readonly title?: string;
@@ -82,7 +82,9 @@ ${card('p50', fmtMs(s.duration.p50), `avg ${fmtMs(s.duration.avg)}`)}
 ${card('p95', fmtMs(s.duration.p95), `p99 ${fmtMs(s.duration.p99)}`)}
 ${card('max', fmtMs(s.duration.max), `min ${fmtMs(s.duration.min)}`)}
 ${lag}
-</div>`;
+${s.dropped > 0 ? card('Not sent', String(s.dropped), 'run hit its max duration', 'bad') : ''}
+</div>
+${capacityWarning(s) ? `<div class="note"><b>Load generator bottleneck.</b> ${escapeHtml(capacityWarning(s) ?? '')}</div>` : ''}`;
 }
 
 function renderRun(h: HeaderSection, s: HttpSection): string {
