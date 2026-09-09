@@ -104,6 +104,12 @@ pipeline {
                 fi
                 docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
             '''
+            // k6 skips the dashboard export for runs shorter than 3s: leave an explanation instead of a broken link.
+            sh '''
+                if [ -f "$WORK/summary.html" ] && [ ! -f "$WORK/k6-dashboard.html" ]; then
+                    printf '%s' '<!DOCTYPE html><html><body style="font-family:sans-serif;padding:24px"><h2>No time series for this run</h2><p>k6 only exports the dashboard (rps, latency, VUs, component metrics over time) when the run lasts longer than 3 seconds. This run was shorter: use a bigger log, a lower RATIO or a longer DURATION. The aggregated report is in <a href="summary.html">summary.html</a>.</p></body></html>' > "$WORK/k6-dashboard.html"
+                fi
+            '''
             archiveArtifacts artifacts: 'work/summary.json, work/summary.html, work/k6-dashboard.html, work/debug-schema.json', allowEmptyArchive: true
             script {
                 if (fileExists('work/summary.html')) {
