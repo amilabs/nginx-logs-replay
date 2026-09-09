@@ -94,7 +94,7 @@ function renderMismatches(s: HttpSection): string {
   const rows = s.mismatchPairs
     .map((p) => `<tr><td>${p.from} → ${p.to}</td><td>${p.count}</td><td>${fmtPct(s.mismatches > 0 ? p.count / s.mismatches : 0)}</td></tr>`)
     .join('\n');
-  return `<h2>Status ≠ log <small>(status in the log → status received on replay; 429/406 in the log usually mean the production rate limiter rejected the request, so replaying it puts more load on the backend than production saw — use SKIP_STATUSES=429,406 to replay only what production served)</small></h2>
+  return `<h2>Status ≠ log <small>(status in the log → status received on replay; 429/406 in the log usually mean the production rate limiter rejected the request, so replaying it puts more load on the backend than production saw — use SKIP_STATUSES=429,5xx to replay only what production served)</small></h2>
 <table><thead><tr><th>log → replay</th><th>count</th><th>share</th></tr></thead><tbody>
 ${rows}
 </tbody></table>`;

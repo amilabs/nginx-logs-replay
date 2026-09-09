@@ -30,6 +30,7 @@ describe('parseConfig', () => {
 
   it('rejects bad SKIP_STATUSES', () => {
     expect(() => parseConfig({ ...base, SKIP_STATUSES: '429,teapot' })).toThrow(/SKIP_STATUSES/);
+    expect(() => parseConfig({ ...base, SKIP_STATUSES: '6xx' })).toThrow(/SKIP_STATUSES/);
     expect(parseConfig(base).skipStatuses).toEqual([]);
   });
 
@@ -50,7 +51,7 @@ describe('parseConfig', () => {
       LIMIT: '500',
       FILTER_ONLY: '/api, /service',
       FILTER_SKIP: '.php',
-      SKIP_STATUSES: '429, 406',
+      SKIP_STATUSES: '429, 5XX, 40*',
       QUERY_PARAMS: 'apiKey=freekey&debug=1&flag',
       CACHE_BUSTER: 'cb',
       TIMEOUT: '5s',
@@ -75,7 +76,7 @@ describe('parseConfig', () => {
     expect(cfg.limit).toBe(500);
     expect(cfg.filterOnly).toEqual(['/api', '/service']);
     expect(cfg.filterSkip).toEqual(['.php']);
-    expect(cfg.skipStatuses).toEqual([429, 406]);
+    expect(cfg.skipStatuses).toEqual(['429', '5xx', '40x']);
     expect(cfg.queryParams).toEqual([
       ['apiKey', 'freekey'],
       ['debug', '1'],

@@ -26,8 +26,8 @@ export interface PoolFilter {
   readonly limit: number;
   readonly filterOnly: readonly string[];
   readonly filterSkip: readonly string[];
-  /** Original status codes to drop (empty = keep all). */
-  readonly skipStatuses?: readonly number[];
+  /** Original status patterns to drop (`429`, `5xx`, `50x`); empty = keep all. */
+  readonly skipStatuses?: readonly string[];
 }
 
 export interface PoolStats {
@@ -38,6 +38,17 @@ export interface PoolStats {
   /** Unix ms of the first/last replayed log entry (0 when the pool is empty). */
   readonly firstTs: number;
   readonly lastTs: number;
+}
+
+/** `429` matches exactly; `5xx` / `50x` (also written `50*`) match by digit position. */
+export function statusMatches(status: number, pattern: string): boolean {
+  const code = String(status);
+  const mask = pattern.toLowerCase().replace(/\*/g, 'x');
+  if (code.length !== 3 || mask.length !== 3) return false;
+  for (let i = 0; i < 3; i += 1) {
+    if (mask[i] !== 'x' && mask[i] !== code[i]) return false;
+  }
+  return true;
 }
 
 function matchesAny(path: string, needles: readonly string[]): boolean {
@@ -51,7 +62,7 @@ export function buildPool(entries: readonly LogEntry[], filter: PoolFilter): Poo
     if (entry.timestamp < startMs) return false;
     if (filter.filterOnly.length > 0 && !matchesAny(entry.path, filter.filterOnly)) return false;
     if (filter.filterSkip.length > 0 && matchesAny(entry.path, filter.filterSkip)) return false;
-    if (filter.skipStatuses && filter.skipStatuses.includes(entry.status)) return false;
+    if (filter.skipStatuses && filter.skipStatuses.some((pattern) => statusMatches(entry.status, pattern))) return false;
     return true;
   });
   const sorted = kept

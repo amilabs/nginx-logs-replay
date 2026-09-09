@@ -69,7 +69,7 @@ k6 run -o experimental-prometheus-rw --tag testid=eth3-$(date +%s) -e PREFIX=...
 | `LIMIT` | `0` | use at most N entries (0 = all) |
 | `FILTER_ONLY` | | comma-separated substrings; keep only matching requests |
 | `FILTER_SKIP` | | comma-separated substrings; drop matching requests |
-| `SKIP_STATUSES` | | drop log entries by original status, e.g. `429,406` (requests production rejected at the rate limiter) |
+| `SKIP_STATUSES` | | drop log entries by original status: codes or masks, e.g. `429,5xx` or `50*` (requests production rejected or failed) |
 | `QUERY_PARAMS` | | `apiKey=x&debug=1` — set/override query params on every request |
 | `CACHE_BUSTER` | | query param name; gets a unique value per request (bypass caches) |
 | `TIMEOUT` | `30s` | per-request timeout |
@@ -105,7 +105,7 @@ Status codes from the log are compared with the replayed ones
 (`replay_status_mismatch`, broken down by log → replay pair in the summary).
 A log full of 429/406 means production rejected those requests at the rate
 limiter; replaying them hits the backend harder than production did, so use
-`SKIP_STATUSES=429,406` for a faithful load. 4xx are normal replayed answers;
+`SKIP_STATUSES=429,5xx` for a faithful load. 4xx are normal replayed answers;
 only 5xx and transport errors count as failed.
 
 ## Component metrics (the "who is slow" table)

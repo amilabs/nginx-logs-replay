@@ -8,6 +8,7 @@ import {
   poolStats,
   poolStatuses,
   setQueryParams,
+  statusMatches,
   topEndpoints,
 } from '../../src/lib/request-pool.ts';
 
@@ -38,7 +39,13 @@ describe('buildPool', () => {
 
   it('drops entries by original status and lists distinct statuses', () => {
     const entries = [entry('/a', 1, 200), entry('/b', 2, 429), entry('/c', 3, 406), entry('/d', 4, 200)];
-    expect(buildPool(entries, { ...noFilter, skipStatuses: [429, 406] }).map((e) => e.p)).toEqual(['/a', '/d']);
+    expect(buildPool(entries, { ...noFilter, skipStatuses: ['429', '406'] }).map((e) => e.p)).toEqual(['/a', '/d']);
+    expect(buildPool([...entries, entry('/e', 5, 503)], { ...noFilter, skipStatuses: ['4xx', '50*'] }).map((e) => e.p)).toEqual(['/a', '/d']);
+    expect(statusMatches(503, '5xx')).toBe(true);
+    expect(statusMatches(503, '50*')).toBe(true);
+    expect(statusMatches(599, '50x')).toBe(false);
+    expect(statusMatches(429, '429')).toBe(true);
+    expect(statusMatches(42, '4xx')).toBe(false);
     expect(poolStatuses(buildPool(entries, noFilter))).toEqual([200, 406, 429]);
   });
 });
