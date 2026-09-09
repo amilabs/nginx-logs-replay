@@ -428,30 +428,32 @@ function renderHttp(s: HttpSection, colors: boolean, capacity: string | null): s
 export function capacityWarning(report: Report): string | null {
   const s = report.http;
   const h = report.header;
-  const late = s.lagP95 !== null && s.lagP95 > 1000;
-  if (!late && s.dropped === 0 && s.suggestedVus === null) return null;
+  // Less than 10% of requests late is noise: the lag line / card already shows it.
+  const tail = s.lagP95 !== null && s.lagP95 > 1000 && (s.lagP90 ?? 0) > 1000;
+  const severe = (s.lagP50 ?? 0) >= 100 || s.dropped > 0;
+  if (!tail && !severe) return null;
+  const reference = h.probeAvgMs ?? h.assumedLatencyMs;
+  const referenceLabel = h.probeAvgMs !== null ? 'at discover' : 'assumed';
+  const targetSlow = s.duration.p95 > reference * 3;
+  const cause = targetSlow
+    ? `responses slowed to p95 ${fmtMs(s.duration.p95)} (max ${fmtMs(s.duration.max)}) vs ${fmtMs(reference)} ${referenceLabel}, so the target saturated and the load actually applied at the peaks was softer than the log`
+    : `responses stayed fast (p95 ${fmtMs(s.duration.p95)}), so the load generator itself was the limit (agent CPU or too few VUs)`;
+  if (!severe) {
+    return `Timeline kept for 90% of requests; a tail fired late (p95 lag ${fmtMs(s.lagP95)}, max ${fmtMs(s.lagMax)}) while all ${h.vus} VUs were busy during bursts: ${cause}.`;
+  }
   const facts: string[] = [];
-  if (late) {
-    const mostlyKept = (s.lagP50 ?? 0) < 100;
-    facts.push(
-      mostlyKept
-        ? `Timeline kept for most requests (p50 lag ${fmtMs(s.lagP50)}) but a tail fired late: p90 ${fmtMs(s.lagP90)}, p95 ${fmtMs(s.lagP95)}, max ${fmtMs(s.lagMax)}, because all ${h.vus} VUs were busy during bursts`
-        : `Timeline not kept: requests fired late by p50 ${fmtMs(s.lagP50)}, p95 ${fmtMs(s.lagP95)}, max ${fmtMs(s.lagMax)} because all ${h.vus} VUs were busy`,
-    );
+  if ((s.lagP50 ?? 0) >= 100) {
+    facts.push(`Timeline not kept: requests fired late by p50 ${fmtMs(s.lagP50)}, p95 ${fmtMs(s.lagP95)}, max ${fmtMs(s.lagMax)} because all ${h.vus} VUs were busy`);
   }
   if (s.dropped > 0) facts.push(`${s.dropped} requests were never sent (no free VU / max duration reached)`);
-  if (facts.length === 0) facts.push('Achieved rps stayed below the plan');
-  const reference = h.probeAvgMs ?? h.assumedLatencyMs;
-  const referenceLabel = h.probeAvgMs !== null ? 'during discover' : 'assumed';
-  const cause =
-    s.duration.p95 > reference * 3
-      ? `Responses were slow under load (p95 ${fmtMs(s.duration.p95)}, max ${fmtMs(s.duration.max)} vs ${fmtMs(reference)} ${referenceLabel}): the target saturated, which is a real finding, and the applied load was softer than planned`
-      : `Responses stayed fast (p95 ${fmtMs(s.duration.p95)}), so the load generator itself was the limit (agent CPU or too few VUs)`;
-  const advice =
-    s.suggestedVus !== null
-      ? `To force the exact timeline at these latencies set VUS to about ${s.suggestedVus}; otherwise lower RATIO/RPS`
-      : 'Raise VUS or lower RATIO/RPS';
-  return `${facts.join('. ')}. ${cause}. ${advice}.`;
+  const vusNote = h.vusAuto
+    ? `VUs were sized automatically (${h.vus} from the ${fmtMs(reference)} ${referenceLabel} latency)`
+    : `VUs were fixed at ${h.vus}`;
+  const vusOption = s.suggestedVus !== null && !h.vusAuto ? ` or set VUS=${s.suggestedVus}` : '';
+  const advice = targetSlow
+    ? `Lower RATIO/RPS to find the level the target sustains${vusOption ? `,${vusOption} to force the exact timeline even at these latencies` : ''}`
+    : `Use a bigger agent${vusOption}, or lower RATIO/RPS`;
+  return `${facts.join('. ')}. ${vusNote}; ${cause}. ${advice}.`;
 }
 
 function renderCapacity(cap: CapacitySection, colors: boolean): string {

@@ -33,7 +33,7 @@ describe('buildLoadPlan', () => {
     const config = parseConfig({ PREFIX: 'http://h', RATIO: '2', TIMEOUT: '5s' });
     const load = buildLoadPlan({ config, timestamps });
     expect(load.peakRps).toBe(2);
-    expect(load.vus).toMatchObject({ preAllocatedVUs: 10, auto: true, assumedLatencyMs: 250 });
+    expect(load.vus).toMatchObject({ preAllocatedVUs: 10, auto: true, assumedLatencyMs: 500 });
     expect(load.replayVus).toBe(10);
     expect(load.scenario).toEqual({
       executor: 'per-vu-iterations',
@@ -51,7 +51,7 @@ describe('buildLoadPlan', () => {
   it('replay: VUs grow with the peak and the probe latency', () => {
     const config = parseConfig({ PREFIX: 'http://h', RATIO: '100' });
     const burst = Array.from({ length: 400 }, (_, i) => i * 1000);
-    expect(buildLoadPlan({ config, timestamps: burst }).vus.preAllocatedVUs).toBe(50);
+    expect(buildLoadPlan({ config, timestamps: burst }).vus.preAllocatedVUs).toBe(100);
     expect(buildLoadPlan({ config, timestamps: burst, probeLatencyMs: 1000 }).vus.preAllocatedVUs).toBe(200);
   });
 
@@ -83,7 +83,7 @@ describe('buildLoadPlan', () => {
 
   it('rate: auto VUs from RPS', () => {
     const config = parseConfig({ PREFIX: 'http://h', MODE: 'rate', RPS: '400' });
-    expect(buildLoadPlan({ config, timestamps }).scenario).toMatchObject({ preAllocatedVUs: 200, maxVUs: 800 });
+    expect(buildLoadPlan({ config, timestamps }).scenario).toMatchObject({ preAllocatedVUs: 400, maxVUs: 1600 });
   });
 });
 

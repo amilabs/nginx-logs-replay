@@ -84,7 +84,7 @@ export interface VuAllocation {
 }
 
 /** Floor for the assumed round trip when sizing VUs automatically. */
-export const MIN_ASSUMED_LATENCY_MS = 250;
+export const MIN_ASSUMED_LATENCY_MS = 500;
 const AUTO_HEADROOM = 2;
 const MIN_AUTO_VUS = 10;
 const MAX_AUTO_VUS = 2000;

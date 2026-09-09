@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { parseConfig } from '../../src/lib/config.ts';
 import { discoverSchema, walkDebug } from '../../src/lib/debug-walker.ts';
-import { buildReport, renderReport, type K6SummaryData } from '../../src/lib/summary.ts';
+import { buildReport, capacityWarning, renderReport, type K6SummaryData } from '../../src/lib/summary.ts';
 
 export const trend = (avg: number, p95: number, p99: number, max: number, med = avg) => ({
   type: 'trend' as const,
@@ -167,12 +167,18 @@ describe('buildReport', () => {
     const text = renderReport(report, 15, false);
     expect(text).toContain('Timeline not kept: requests fired late by p50 50.00s, p95 92.12s, max 96.73s because all 5 VUs were busy');
     expect(text).toContain('12883 requests were never sent');
-    expect(text).toContain('load generator itself was the limit');
-    expect(text).toContain('set VUS to about 54');
-    const tail = buildReport({ ...slow, metrics: { ...slow.metrics, replay_lag_ms: trend(800, 7137, 12795, 19058, 0) } }, { ...ctx, vus: { preAllocatedVUs: 176, maxVUs: 704, auto: true, assumedLatencyMs: 250 }, targetRps: 352, plannedMs: 180_000 });
-    expect(renderReport(tail, 15, false)).toContain('Timeline kept for most requests (p50 lag 0.00ms) but a tail fired late: p90 7.14s, p95 7.14s, max 19.06s, because all 176 VUs were busy during bursts');
+    expect(text).toContain('VUs were fixed at 5; responses stayed fast');
+    expect(text).toContain('Use a bigger agent or set VUS=54, or lower RATIO/RPS');
+    const tail = buildReport({ ...slow, metrics: { ...slow.metrics, dropped_iterations: counter(0), replay_lag_ms: trend(800, 7137, 12795, 19058, 0) } }, { ...ctx, vus: { preAllocatedVUs: 176, maxVUs: 704, auto: true, assumedLatencyMs: 250 }, targetRps: 352, plannedMs: 180_000 });
+    expect(renderReport(tail, 15, false)).toContain('Timeline kept for 90% of requests; a tail fired late (p95 lag 7.14s, max 19.06s) while all 176 VUs were busy during bursts: responses stayed fast');
+    const lagTail = { type: 'trend' as const, contains: 'time', values: { avg: 50, min: 0, med: 0, 'p(75)': 0, 'p(90)': 0, 'p(95)': 1100, 'p(99)': 3000, 'p(99.9)': 7000, max: 7590 } };
+    const smallTail = buildReport({ ...slow, metrics: { ...slow.metrics, dropped_iterations: counter(0), replay_lag_ms: lagTail } }, { ...ctx, vus: { preAllocatedVUs: 111, maxVUs: 444, auto: true, assumedLatencyMs: 500 }, targetRps: 220, plannedMs: 180_000 });
+    expect(capacityWarning(smallTail)).toBeNull();
+    const autoSevere = buildReport(slow, { ...ctx, vus: { preAllocatedVUs: 111, maxVUs: 444, auto: true, assumedLatencyMs: 500 }, targetRps: 220, plannedMs: 180_000, probeAvgMs: 77.5 });
+    expect(capacityWarning(autoSevere)).toContain('VUs were sized automatically (111 from the 77.5ms at discover latency)');
+    expect(capacityWarning(autoSevere)).not.toContain('VUS=');
     const saturated = buildReport({ ...slow, metrics: { ...slow.metrics, http_req_duration: trend(1200, 5227, 9000, 18047, 40) } }, { ...ctx, vus: { preAllocatedVUs: 227, maxVUs: 900, auto: true, assumedLatencyMs: 250 }, targetRps: 453, plannedMs: 120_000, probeAvgMs: 83.6 });
-    expect(renderReport(saturated, 15, false)).toContain('Responses were slow under load (p95 5.23s, max 18.05s vs 83.6ms during discover): the target saturated');
+    expect(renderReport(saturated, 15, false)).toContain('responses slowed to p95 5.23s (max 18.05s) vs 83.6ms at discover, so the target saturated');
     expect(buildReport(data, ctx).http).toMatchObject({ dropped: 0, suggestedVus: null });
   });
 

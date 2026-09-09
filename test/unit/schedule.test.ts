@@ -72,8 +72,8 @@ describe('peakRps', () => {
 
 describe('allocateVus', () => {
   it('sizes VUs from the peak rate and the assumed latency', () => {
-    expect(allocateVus(369, null, null)).toEqual({ preAllocatedVUs: 185, maxVUs: 740, auto: true, assumedLatencyMs: 250 });
-    expect(allocateVus(369, null, null, 65)).toMatchObject({ preAllocatedVUs: 185, assumedLatencyMs: 250 });
+    expect(allocateVus(369, null, null)).toEqual({ preAllocatedVUs: 369, maxVUs: 1476, auto: true, assumedLatencyMs: 500 });
+    expect(allocateVus(369, null, null, 65)).toMatchObject({ preAllocatedVUs: 369, assumedLatencyMs: 500 });
     expect(allocateVus(369, null, null, 800)).toMatchObject({ preAllocatedVUs: 591, assumedLatencyMs: 800 });
     expect(allocateVus(4, null, null)).toMatchObject({ preAllocatedVUs: 10, maxVUs: 200 });
     expect(allocateVus(100_000, null, null)).toMatchObject({ preAllocatedVUs: 2000, maxVUs: 5000 });
