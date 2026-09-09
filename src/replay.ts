@@ -20,13 +20,18 @@ import { topEndpoints } from './lib/request-pool.ts';
 import { poolIndex, targetTime } from './lib/schedule.ts';
 import { buildReport, renderReport, type K6SummaryData } from './lib/summary.ts';
 import { declareDebugMetrics, replayLag } from './k6/metrics.ts';
-import { loadSchema, poolTimestamps, sharedPool } from './k6/pool.ts';
+import { loadSchema, poolTimestamps, sharedOnce, sharedPool } from './k6/pool.ts';
 import { createRequestContext, performRequest } from './k6/request.ts';
 
 const config = parseConfig(__ENV);
 const { pool, meta } = sharedPool(config);
 const schema = loadSchema(config);
-const load = buildLoadPlan({ config, timestamps: poolTimestamps(pool), probeLatencyMs: schema?.probeAvgMs ?? null });
+// Derived from the whole pool: computed once and shared, not per VU (see sharedOnce).
+const derived = sharedOnce('plan', () => ({
+  load: buildLoadPlan({ config, timestamps: poolTimestamps(pool), probeLatencyMs: schema?.probeAvgMs ?? null }),
+  top: topEndpoints(pool, config.top, config.normalizeEndpoints),
+}));
+const load = derived.load;
 const requestContext = createRequestContext(config, declareDebugMetrics(schema, config.debugTimeFactor));
 
 // 4xx are legitimate replayed responses; only 5xx and transport errors count as failed.
@@ -35,7 +40,7 @@ http.setResponseCallback(http.expectedStatuses({ min: 200, max: 499 }));
 export const options = buildOptions({
   config,
   load,
-  topEndpoints: topEndpoints(pool, config.top, config.normalizeEndpoints),
+  topEndpoints: derived.top,
 }) as Options;
 
 export function setup(): void {

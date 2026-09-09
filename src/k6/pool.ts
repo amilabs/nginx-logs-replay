@@ -58,6 +58,18 @@ export function sharedPool(config: Config): LoadedPool {
   return { pool, meta };
 }
 
+/**
+ * Computes a JSON-serializable value once (in the first VU) and shares it
+ * with every other VU. k6 re-runs the init context per VU, so anything
+ * derived from the whole pool must go through here or init time explodes.
+ */
+export function sharedOnce<T>(name: string, compute: () => T): T {
+  const holder = new SharedArray(`nginx-logs-replay:${name}`, () => [compute()]) as unknown as readonly T[];
+  const value = holder[0];
+  if (value === undefined) throw new Error(`Shared value "${name}" missing`);
+  return value;
+}
+
 /** Timestamps of the pool in order (for schedule offsets). */
 export function poolTimestamps(pool: readonly PoolEntry[]): number[] {
   const out: number[] = new Array(pool.length);
