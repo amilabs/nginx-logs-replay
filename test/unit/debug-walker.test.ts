@@ -98,6 +98,7 @@ describe('discoverSchema / parseSchema', () => {
   it('round-trips through JSON and rejects bad shapes', () => {
     const schema = discoverSchema('debug', [walkDebug(DEBUG)]);
     expect(parseSchema(JSON.parse(JSON.stringify(schema)))).toEqual(schema);
+    expect(parseSchema({ ...JSON.parse(JSON.stringify(schema)), probe: { avgDurationMs: 65.5 } })).toEqual({ ...schema, probeAvgMs: 65.5 });
     expect(parseSchema({ field: 'debug' })).toBeNull();
     expect(parseSchema({ field: 'debug', entries: [{ path: 'a', kind: 'weird' }] })).toBeNull();
     expect(parseSchema('nope')).toBeNull();

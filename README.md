@@ -31,8 +31,8 @@ Prometheus remote write for Grafana.
 # 1. learn the debug block (5 requests by default) -> ./debug-schema.json
 k6 run -e PREFIX=https://api.example.com -e LOG=./access.log src/discover.ts
 
-# 2. replay the log twice as fast as it happened, 100 concurrent requests max
-k6 run -e PREFIX=https://api.example.com -e LOG=./access.log -e RATIO=2 -e VUS=100 src/replay.ts
+# 2. replay the log twice as fast as it happened (VUs are sized automatically)
+k6 run -e PREFIX=https://api.example.com -e LOG=./access.log -e RATIO=2 src/replay.ts
 
 # 3. or fire the same requests at a fixed 50 rps for 5 minutes
 k6 run -e PREFIX=https://api.example.com -e LOG=./access.log -e MODE=rate -e RPS=50 -e DURATION=5m src/replay.ts
@@ -62,8 +62,8 @@ k6 run -o experimental-prometheus-rw --tag testid=eth3-$(date +%s) -e PREFIX=...
 | `RATIO` | `1` | replay speed: `2` = twice as fast, `0.5` = half speed |
 | `RPS` | `10` | rate mode: requests per second |
 | `DURATION` | `60s` | rate mode: how long to run |
-| `VUS` | `50` | replay: max concurrent requests; rate: pre-allocated VUs |
-| `MAX_VUS` | `VUS*4` | rate mode: hard cap on VUs |
+| `VUS` | auto | concurrent VUs; empty = busiest second of the plan × latency measured by `discover.ts` (min 250ms) × 2 |
+| `MAX_VUS` | auto | rate mode: hard cap on VUs (default 4 × VUS, at least 200); k6 adds VUs on demand up to it |
 | `FORMAT` | nginx `combined` | your `log_format` string with `$vars` (must contain `$request` and `$time_local` or `$msec`) |
 | `START_TS` | `0` | skip entries before this unix timestamp (seconds) |
 | `LIMIT` | `0` | use at most N entries (0 = all) |
@@ -91,9 +91,10 @@ k6 run -o experimental-prometheus-rw --tag testid=eth3-$(date +%s) -e PREFIX=...
 **replay** — every request gets an absolute target time
 `start + (t_log - t_first) / RATIO`. Requests logged in the same second are
 spread evenly across that second, so 1-second log granularity does not turn
-into bursts. `VUS` bounds concurrency; if a request is late because all VUs
-were busy, `replay_lag_ms` records by how much (the summary warns when p95
-lag exceeds 1s: raise `VUS` or lower `RATIO`).
+into bursts (with `$msec` in the log format offsets are exact). VUs are sized
+automatically from the busiest second of the plan and the latency measured by
+`discover.ts`; `VUS` overrides. If a request is late because all VUs were busy,
+`replay_lag_ms` records by how much and the summary suggests a `VUS` value.
 
 **rate** — k6 `constant-arrival-rate`: exactly `RPS` requests per second,
 walking through the pool in order and wrapping around.

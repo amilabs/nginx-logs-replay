@@ -26,6 +26,8 @@ export interface SchemaEntry {
 export interface DebugSchema {
   readonly field: string;
   readonly entries: readonly SchemaEntry[];
+  /** Average request duration (ms) measured by discover probes; used to size VUs. */
+  readonly probeAvgMs?: number;
 }
 
 const MAX_METRIC_NAME = 128;
@@ -131,7 +133,8 @@ export function parseSchema(value: unknown): DebugSchema | null {
     const kind = raw.kind as Kind;
     entries.push({ path: raw.path, kind, metric: metricName(raw.path, kind) });
   }
-  return { field: value.field, entries };
+  const probe = isDict(value.probe) && isNumber(value.probe.avgDurationMs) ? value.probe.avgDurationMs : undefined;
+  return probe === undefined ? { field: value.field, entries } : { field: value.field, entries, probeAvgMs: probe };
 }
 
 /** Metric names that collide after sanitizing (e.g. `a.b` vs `a_b`). */

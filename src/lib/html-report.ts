@@ -63,18 +63,20 @@ function card(label: string, value: string, detail = '', cls = ''): string {
 }
 
 function renderCards(h: HeaderSection, s: HttpSection): string {
+  const vus = h.vusAuto ? `auto VUs ${h.vus}` : `fixed VUs ${h.vus}`;
   const load =
     h.mode === 'replay'
-      ? card('Load', `x${fmtNum(h.ratio)}`, `target ${fmtNum(h.targetRps)} rps, max ${h.vus} VUs`)
-      : card('Load', `${fmtNum(h.rps)} rps`, `for ${escapeHtml(h.duration)}, ${h.vus} VUs (max ${h.maxVus})`);
-  const rpsCls = h.targetRps > 0 && h.achievedRps < h.targetRps * 0.9 ? 'warn' : '';
+      ? card('Load', `x${fmtNum(h.ratio)}`, `planned ${fmtDuration(h.plannedMs ?? 0)}, ${vus}`)
+      : card('Load', `${fmtNum(h.rps)} rps`, `for ${escapeHtml(h.duration)}, ${vus} → ${h.maxVus}`);
+  const expectedRps = h.mode === 'replay' ? h.originalRps * h.ratio : h.targetRps;
+  const rpsCls = expectedRps > 0 && h.achievedRps < expectedRps * 0.9 ? 'warn' : '';
   const lag =
     s.lagP95 === null
       ? ''
       : card('Schedule lag p95', fmtMs(s.lagP95), `max ${fmtMs(s.lagMax)}`, (s.lagP95 ?? 0) > 1000 ? 'warn' : '');
   return `<div class="cards">
 ${card('Requests', String(h.requests), `in ${fmtDuration(h.testDurationMs)}`)}
-${card('Achieved RPS', fmtNum(h.achievedRps), `original ${fmtNum(h.originalRps)} · target ${fmtNum(h.targetRps)}`, rpsCls)}
+${card('Achieved RPS', fmtNum(h.achievedRps), h.mode === 'replay' ? `original ${fmtNum(h.originalRps)} · x${fmtNum(h.ratio)} = ${fmtNum(h.originalRps * h.ratio)} avg, ${fmtNum(h.targetRps)} peak` : `target ${fmtNum(h.targetRps)}`, rpsCls)}
 ${load}
 ${card('Failed', fmtPct(s.failedRate), `${s.failed} × 5xx / transport`, s.failedRate > 0 ? 'bad' : 'ok')}
 ${card('Status ≠ log', String(s.mismatches), 'replayed status differs from the log', s.mismatches > 0 ? 'warn' : '')}
@@ -92,14 +94,14 @@ function renderRun(h: HeaderSection, s: HttpSection): string {
   const malformed = h.malformed > 0 ? ` <span class="warn">(${h.malformed} malformed lines skipped)</span>` : '';
   const run = [
     kv('Target', escapeHtml(h.prefix)),
-    kv('Mode', h.mode === 'replay' ? `replay, ratio x${fmtNum(h.ratio)}` : `rate, ${fmtNum(h.rps)} rps for ${escapeHtml(h.duration)}`),
+    kv('Mode', h.mode === 'replay' ? `replay, ratio x${fmtNum(h.ratio)}${h.plannedMs ? ` (planned ${fmtDuration(h.plannedMs)})` : ''}` : `rate, ${fmtNum(h.rps)} rps for ${escapeHtml(h.duration)}`),
     kv('Started', escapeHtml(h.startedAt)),
     kv('Finished', escapeHtml(h.finishedAt)),
     kv('Duration', fmtDuration(h.testDurationMs)),
-    kv('VUs', h.mode === 'rate' ? `${h.vus} pre-allocated, max ${h.maxVus}` : `max ${h.vus}`),
+    kv('VUs', h.vusAuto ? `${h.vus}, automatic (busiest second × ${h.assumedLatencyMs}ms assumed latency × 2)${h.mode === 'rate' ? `, up to ${h.maxVus}` : ''}` : `${h.vus}, fixed${h.mode === 'rate' ? `, up to ${h.maxVus}` : ''}`),
     kv('Requests sent', String(h.requests)),
     kv('Achieved RPS', fmtNum(h.achievedRps)),
-    kv('Target RPS', fmtNum(h.targetRps)),
+    kv(h.mode === 'replay' ? 'Busiest second' : 'Target RPS', `${fmtNum(h.targetRps)} rps`),
   ].join('\n');
   const log = [
     kv('Log entries', `${h.poolKept} replayed of ${h.poolTotal}${malformed}`),

@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { parseConfig } from '../../src/lib/config.ts';
-import { SCENARIO_NAME, buildOptions, buildScenario, buildThresholds, replayVus } from '../../src/lib/options.ts';
+import { SCENARIO_NAME, buildLoadPlan, buildOptions, buildThresholds } from '../../src/lib/options.ts';
 
 describe('buildThresholds', () => {
-  it('creates three always-passing thresholds per safe endpoint', () => {
+  it('creates always-passing thresholds per safe endpoint', () => {
     const thresholds = buildThresholds([
       { endpoint: '/api/v1/x', count: 5 },
       { endpoint: '/bad,name}', count: 1 },
@@ -18,30 +18,46 @@ describe('buildThresholds', () => {
   });
 });
 
-describe('buildScenario', () => {
-  it('replay: per-vu-iterations covering the pool with a safety margin', () => {
-    const config = parseConfig({ PREFIX: 'http://h', VUS: '4', RATIO: '2', TIMEOUT: '5s' });
-    expect(buildScenario({ config, poolSize: 10, offsets: [0, 60_000] })).toEqual({
+describe('buildLoadPlan', () => {
+  // 10 requests over 9s of log time
+  const timestamps = Array.from({ length: 10 }, (_, i) => i * 1000);
+
+  it('replay: exact timeline with automatically sized VUs', () => {
+    const config = parseConfig({ PREFIX: 'http://h', RATIO: '2', TIMEOUT: '5s' });
+    const load = buildLoadPlan({ config, timestamps });
+    expect(load.peakRps).toBe(2);
+    expect(load.vus).toMatchObject({ preAllocatedVUs: 10, auto: true, assumedLatencyMs: 250 });
+    expect(load.replayVus).toBe(10);
+    expect(load.scenario).toEqual({
       executor: 'per-vu-iterations',
-      vus: 4,
-      iterations: 3,
-      maxDuration: '65s',
+      vus: 10,
+      iterations: 1,
+      maxDuration: '40s',
       gracefulStop: '5s',
     });
+    expect(load.offsets).toHaveLength(10);
+    expect(load.plannedMs).toBe(4500);
   });
 
-  it('replay: never allocates more VUs than requests', () => {
+  it('replay: VUs grow with the peak and the probe latency', () => {
+    const config = parseConfig({ PREFIX: 'http://h', RATIO: '100' });
+    const burst = Array.from({ length: 400 }, (_, i) => i * 1000);
+    expect(buildLoadPlan({ config, timestamps: burst }).vus.preAllocatedVUs).toBe(50);
+    expect(buildLoadPlan({ config, timestamps: burst, probeLatencyMs: 1000 }).vus.preAllocatedVUs).toBe(200);
+  });
+
+  it('replay: explicit VUS override, never more VUs than requests', () => {
     const config = parseConfig({ PREFIX: 'http://h', VUS: '50' });
-    expect(replayVus(config, 3)).toBe(3);
-    expect(replayVus(config, 500)).toBe(50);
-    expect(replayVus(config, 0)).toBe(1);
-    expect(buildScenario({ config, poolSize: 3, offsets: [0, 1, 2] })).toMatchObject({ vus: 3, iterations: 1 });
-    expect(buildScenario({ config, poolSize: 0, offsets: [] })).toMatchObject({ vus: 1, iterations: 1 });
+    const load = buildLoadPlan({ config, timestamps: [0, 1, 2] });
+    expect(load.vus.auto).toBe(false);
+    expect(load.scenario).toMatchObject({ vus: 3, iterations: 1 });
+    expect(buildLoadPlan({ config, timestamps: [] }).scenario).toMatchObject({ vus: 1, iterations: 1 });
   });
 
-  it('rate: constant-arrival-rate', () => {
+  it('rate: constant-arrival-rate with explicit VUs', () => {
     const config = parseConfig({ PREFIX: 'http://h', MODE: 'rate', RPS: '25', DURATION: '2m', VUS: '10', MAX_VUS: '30' });
-    expect(buildScenario({ config, poolSize: 10, offsets: [] })).toEqual({
+    const load = buildLoadPlan({ config, timestamps });
+    expect(load.scenario).toEqual({
       executor: 'constant-arrival-rate',
       rate: 25,
       timeUnit: '1s',
@@ -50,22 +66,30 @@ describe('buildScenario', () => {
       maxVUs: 30,
       gracefulStop: '30s',
     });
+    expect(load.peakRps).toBe(25);
+    expect(load.plannedMs).toBeNull();
+  });
+
+  it('rate: auto VUs from RPS', () => {
+    const config = parseConfig({ PREFIX: 'http://h', MODE: 'rate', RPS: '400' });
+    expect(buildLoadPlan({ config, timestamps }).scenario).toMatchObject({ preAllocatedVUs: 200, maxVUs: 800 });
   });
 });
 
 describe('buildOptions', () => {
   it('assembles scenario, thresholds and global settings', () => {
     const config = parseConfig({ PREFIX: 'http://h', INSECURE: 'true', USER_AGENT: 'bench' });
-    const options = buildOptions({ config, poolSize: 2, offsets: [0, 1], topEndpoints: [{ endpoint: '/a', count: 2 }] });
+    const load = buildLoadPlan({ config, timestamps: [0, 1] });
+    const options = buildOptions({ config, load, topEndpoints: [{ endpoint: '/a', count: 2 }] });
     expect(Object.keys(options.scenarios as object)).toEqual([SCENARIO_NAME]);
     expect(options.thresholds).toHaveProperty('http_reqs{endpoint:/a}');
     expect(options.insecureSkipTLSVerify).toBe(true);
     expect(options.userAgent).toBe('bench');
-    expect(options.summaryTrendStats).toContain('p(99)');
+    expect(options.summaryTrendStats).toContain('p(99.9)');
   });
 
   it('keeps the log user agent when USER_AGENT=log', () => {
     const config = parseConfig({ PREFIX: 'http://h' });
-    expect(buildOptions({ config, poolSize: 1, offsets: [0], topEndpoints: [] }).userAgent).toBeUndefined();
+    expect(buildOptions({ config, load: buildLoadPlan({ config, timestamps: [0] }), topEndpoints: [] }).userAgent).toBeUndefined();
   });
 });

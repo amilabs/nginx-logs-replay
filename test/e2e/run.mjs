@@ -91,6 +91,8 @@ async function main() {
     assert.ok(replay.report.http.dataReceived > 0 && replay.report.http.ttfb.p95 > 0, 'traffic and ttfb present');
     assert.ok(replay.report.header.logFrom.startsWith('2026-09-10T12:00:00'), 'log window present');
     assert.ok(replay.report.http.lagP95 !== null && replay.report.http.lagP95 < 500, 'schedule lag is small');
+    assert.ok(replay.report.header.vusAuto === false && replay.report.header.vus === 5, 'explicit VUS honoured');
+    assert.ok(typeof schema.probe.avgDurationMs === 'number' && schema.probe.avgDurationMs > 0, 'discover stored probe latency');
     const html = readFileSync(htmlPath, 'utf8');
     assert.ok(html.startsWith('<!DOCTYPE html>') && html.includes('<svg') && html.includes('clickhouse') && html.includes('/slow'), 'HTML report written');
     const received = (await stats(port)).received.slice(before);
@@ -101,10 +103,11 @@ async function main() {
     assert.ok(received.some((r) => r.method === 'POST'), 'method replayed from log');
 
     console.log('e2e: rate mode');
-    runK6(k6, path.join(root, 'src', 'replay.ts'), { ...common, MODE: 'rate', RPS: '20', DURATION: '2s', VUS: '10' }, root);
+    runK6(k6, path.join(root, 'src', 'replay.ts'), { ...common, MODE: 'rate', RPS: '20', DURATION: '2s' }, root);
     const rate = JSON.parse(readFileSync(summaryPath, 'utf8'));
     assert.ok(rate.report.http.count >= 30 && rate.report.http.count <= 45, `rate mode sent ~40 requests, got ${rate.report.http.count}`);
     assert.equal(rate.report.http.lagP95, null, 'no lag metric in rate mode');
+    assert.ok(rate.report.header.vusAuto === true && rate.report.header.vus === 10 && rate.report.header.maxVus === 200, 'rate mode auto VUs');
     assert.ok(rate.report.components.length > 0);
 
     console.log('e2e: OK');

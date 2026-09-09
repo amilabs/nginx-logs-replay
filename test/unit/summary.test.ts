@@ -52,6 +52,9 @@ export const ctx = {
   schema,
   pool: { total: 130, kept: 120, spanMs: 24_000, originalRps: 5, firstTs: Date.UTC(2026, 8, 10, 12, 0, 0), lastTs: Date.UTC(2026, 8, 10, 12, 0, 24) },
   malformed: 4,
+  vus: { preAllocatedVUs: 10, maxVUs: 200, auto: false, assumedLatencyMs: 250 },
+  targetRps: 12,
+  plannedMs: 12_000,
   finishedAt: new Date(Date.UTC(2026, 8, 11, 8, 0, 12)),
 };
 
@@ -72,10 +75,13 @@ describe('buildReport', () => {
       logTo: '2026-09-10T12:00:24.000Z',
       spanMs: 24_000,
       originalRps: 5,
-      targetRps: 10,
+      targetRps: 12,
       achievedRps: 10,
       ratio: 2,
+      plannedMs: 12_000,
       vus: 10,
+      maxVus: 200,
+      vusAuto: false,
       requests: 120,
     });
   });
@@ -125,25 +131,28 @@ describe('buildReport', () => {
         replay_lag_ms: trend(50_000, 92_122, 95_000, 96_734),
       },
     };
-    const report = buildReport(slow, { ...ctx, config: parseConfig({ PREFIX: 'http://h', RATIO: '60', VUS: '5' }), pool: { ...ctx.pool, kept: 22_120, spanMs: 3_599_000, originalRps: 6.146 } });
-    expect(report.header.targetRps).toBeCloseTo(368.76, 1);
+    const report = buildReport(slow, {
+      ...ctx,
+      config: parseConfig({ PREFIX: 'http://h', RATIO: '60', VUS: '5' }),
+      pool: { ...ctx.pool, kept: 22_120, spanMs: 3_599_000, originalRps: 6.146 },
+      vus: { preAllocatedVUs: 5, maxVUs: 200, auto: false, assumedLatencyMs: 250 },
+      targetRps: 368.76,
+      plannedMs: 60_000,
+    });
     expect(report.http.dropped).toBe(12_883);
     expect(report.http.suggestedVus).toBe(36);
     const text = renderReport(report, 15, false);
-    expect(text).toContain('12883 requests were never sent (run hit its max duration), requests fired late; the client could not keep up: set VUS to about 36 or lower the rate');
+    expect(text).toContain('12883 requests were never sent (run hit its max duration / no free VU), requests fired late; the load generator could not keep up: set VUS to about 36 or lower the rate');
     expect(buildReport(data, ctx).http).toMatchObject({ dropped: 0, suggestedVus: null });
-  });
-
-  it('prefers the allocated VU count when given', () => {
-    expect(buildReport(data, { ...ctx, vus: 3 }).header.vus).toBe(3);
   });
 
   it('handles rate mode without lag and without schema', () => {
     const rateReport = buildReport(
       { metrics: { http_reqs: counter(5, 1), http_req_duration: trend(1, 2, 3, 4) } },
-      { ...ctx, schema: null, config: parseConfig({ PREFIX: 'http://h', MODE: 'rate', RPS: '7' }) },
+      { ...ctx, schema: null, config: parseConfig({ PREFIX: 'http://h', MODE: 'rate', RPS: '7' }), targetRps: 7, plannedMs: null, vus: { preAllocatedVUs: 10, maxVUs: 200, auto: true, assumedLatencyMs: 250 } },
     );
     expect(rateReport.header.targetRps).toBe(7);
+    expect(rateReport.header.vusAuto).toBe(true);
     expect(rateReport.header.startedAt).toBe(rateReport.header.finishedAt);
     expect(rateReport.http.lagP95).toBeNull();
     expect(rateReport.http.ttfb.avg).toBe(0);
@@ -160,7 +169,7 @@ describe('renderReport', () => {
     expect(text).toContain('run:       2026-09-11T08:00:00.000Z → 2026-09-11T08:00:12.000Z (12.0s)');
     expect(text).toContain('120 of 130 log entries, 4 malformed lines skipped');
     expect(text).toContain('2026-09-10T12:00:00.000Z → 2026-09-10T12:00:24.000Z, 24.0s span, 5 rps');
-    expect(text).toContain('ratio x2 (target 10 rps), max 10 VUs');
+    expect(text).toContain('ratio x2 (planned 12.0s, busiest second 12 rps), fixed VUs 10');
     expect(text).toContain('failed (5xx/transport) 6 (5.00%)   status != log 3   received 234.4 KB (avg 2.0 KB/resp)   sent 11.7 KB');
     expect(text).toMatch(/duration\s+1\.00ms\s+50\.0ms\s+40\.0ms\s+120ms\s+120ms\s+300ms\s+900ms/);
     expect(text).toMatch(/ttfb\s+1\.00ms\s+45\.0ms/);

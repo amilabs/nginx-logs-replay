@@ -1,15 +1,16 @@
 /**
- * Replay timeline: absolute offsets per pool index and VU partitioning.
- * Pure. Absolute scheduling (start + offset / ratio) means no cumulative drift.
+ * Replay timeline: absolute offsets per pool index, VU partitioning and
+ * automatic VU sizing. Every request fires at `start + offset / ratio`, so
+ * inter-request gaps are exactly the log's gaps divided by RATIO. Pure.
  */
 
-/** Requests logged in the same instant are spread over at most this window. */
+/** Requests logged in the same instant are spread over at most this window (1s log granularity). */
 export const SPREAD_WINDOW_MS = 1000;
 
 /**
  * Offsets (ms from the first request) for sorted timestamps.
- * Entries that share a timestamp (1s log granularity) are spread evenly over
- * the gap to the next distinct timestamp, capped at SPREAD_WINDOW_MS.
+ * Entries that share a timestamp are spread evenly over the gap to the next
+ * distinct timestamp, capped at SPREAD_WINDOW_MS.
  */
 export function buildOffsets(timestamps: readonly number[]): number[] {
   const first = timestamps[0];
@@ -56,4 +57,52 @@ export function replaySpanMs(offsets: readonly number[], ratio: number): number 
 export function replayMaxDuration(offsets: readonly number[], ratio: number, timeoutMs: number, marginMs = 30_000): string {
   const total = replaySpanMs(offsets, ratio) + timeoutMs + marginMs;
   return `${Math.ceil(total / 1000)}s`;
+}
+
+/**
+ * Highest number of requests due within any wall-clock window of `windowMs`
+ * (sliding over the compressed timeline). Peak rps = result / (windowMs/1000).
+ */
+export function peakRps(offsets: readonly number[], ratio: number, windowMs = 1000): number {
+  if (offsets.length === 0) return 0;
+  let best = 0;
+  let head = 0;
+  for (let tail = 0; tail < offsets.length; tail += 1) {
+    const tailAt = (offsets[tail] ?? 0) / ratio;
+    while (head < tail && (offsets[head] ?? 0) / ratio <= tailAt - windowMs) head += 1;
+    best = Math.max(best, tail - head + 1);
+  }
+  return best / (windowMs / 1000);
+}
+
+export interface VuAllocation {
+  readonly preAllocatedVUs: number;
+  readonly maxVUs: number;
+  readonly auto: boolean;
+  /** Latency (ms) the automatic sizing assumed. */
+  readonly assumedLatencyMs: number;
+}
+
+/** Floor for the assumed round trip when sizing VUs automatically. */
+export const MIN_ASSUMED_LATENCY_MS = 250;
+const AUTO_HEADROOM = 2;
+const MIN_AUTO_VUS = 10;
+const MAX_AUTO_VUS = 2000;
+
+/**
+ * VUs needed to keep up with `peakRps`: peak × latency × headroom. Explicit
+ * values win. `measuredLatencyMs` (e.g. from discover probes) raises the
+ * assumed latency above the floor.
+ */
+export function allocateVus(
+  peak: number,
+  vus: number | null,
+  maxVus: number | null,
+  measuredLatencyMs: number | null = null,
+): VuAllocation {
+  const assumedLatencyMs = Math.max(MIN_ASSUMED_LATENCY_MS, measuredLatencyMs ?? 0);
+  const needed = Math.ceil((peak * assumedLatencyMs * AUTO_HEADROOM) / 1000);
+  const pre = vus ?? Math.min(MAX_AUTO_VUS, Math.max(MIN_AUTO_VUS, needed));
+  const max = maxVus ?? Math.min(5000, Math.max(200, pre * 4));
+  return { preAllocatedVUs: pre, maxVUs: Math.max(pre, max), auto: vus === null, assumedLatencyMs };
 }

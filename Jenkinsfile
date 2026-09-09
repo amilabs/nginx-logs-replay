@@ -25,7 +25,7 @@ pipeline {
                     env.RATIO = rate ? '1' : (params.RATIO ?: '1')
                     env.RPS = rate ? params.RPS : '10'
                     env.DURATION = rate ? (params.DURATION ?: '60s') : '60s'
-                    env.VUS = params.VUS ?: '50'
+                    env.VUS = params.VUS ?: ''
                     env.PREFIX = params.PREFIX
                     env.QUERY_PARAMS = params.QUERY_PARAMS ?: ''
                     env.EXTRA_ENV = params.EXTRA_ENV ?: ''

@@ -17,8 +17,10 @@ export interface Config {
   readonly ratio: number;
   readonly rps: number;
   readonly duration: string;
-  readonly vus: number;
-  readonly maxVus: number;
+  /** Pre-allocated VUs; null = size automatically from the peak rate. */
+  readonly vus: number | null;
+  /** Hard VU cap; null = derived from vus. */
+  readonly maxVus: number | null;
   readonly format: string;
   readonly startTs: number;
   readonly limit: number;
@@ -57,7 +59,6 @@ export const DEFAULTS = {
   ratio: 1,
   rps: 10,
   duration: '60s',
-  vus: 50,
   timeout: '30s',
   userAgent: 'log',
   debugField: 'debug',
@@ -184,9 +185,9 @@ export function parseConfig(env: Env): Config {
 
   const ratio = readNumber(env, { key: 'RATIO', fallback: DEFAULTS.ratio, min: 0.001, integer: false }, problems);
   const rps = readNumber(env, { key: 'RPS', fallback: DEFAULTS.rps, min: 0.001, integer: false }, problems);
-  const vus = readNumber(env, { key: 'VUS', fallback: DEFAULTS.vus, min: 1, integer: true }, problems);
-  const maxVus = readNumber(env, { key: 'MAX_VUS', fallback: vus * 4, min: 1, integer: true }, problems);
-  if (maxVus < vus) problems.push(`MAX_VUS (${maxVus}) must be >= VUS (${vus})`);
+  const vus = env.VUS && env.VUS.trim() ? readNumber(env, { key: 'VUS', fallback: 1, min: 1, integer: true }, problems) : null;
+  const maxVus = env.MAX_VUS && env.MAX_VUS.trim() ? readNumber(env, { key: 'MAX_VUS', fallback: 1, min: 1, integer: true }, problems) : null;
+  if (vus !== null && maxVus !== null && maxVus < vus) problems.push(`MAX_VUS (${maxVus}) must be >= VUS (${vus})`);
   const startTs = readNumber(env, { key: 'START_TS', fallback: 0, min: 0, integer: false }, problems);
   const limit = readNumber(env, { key: 'LIMIT', fallback: 0, min: 0, integer: true }, problems);
   const discoverN = readNumber(env, { key: 'DISCOVER_N', fallback: DEFAULTS.discoverN, min: 1, integer: true }, problems);

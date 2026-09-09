@@ -11,7 +11,7 @@
 import type { Options } from 'k6/options';
 import { parseConfig } from './lib/config.ts';
 import { discoverSchema, scaleTimeSamples, walkDebug, type DebugSchema, type Sample } from './lib/debug-walker.ts';
-import { fmtNum, palette, table } from './lib/format.ts';
+import { fmtMs, fmtNum, palette, table } from './lib/format.ts';
 import { sharedPool } from './k6/pool.ts';
 import { createRequestContext, extractDebug, performRequest } from './k6/request.ts';
 
@@ -24,6 +24,7 @@ export const options: Options = { vus: 1, iterations: 1 };
 interface Probe {
   readonly path: string;
   readonly status: number;
+  readonly durationMs: number;
   readonly samples: readonly Sample[];
 }
 
@@ -40,9 +41,16 @@ export function setup(): Discovery {
     if (!entry) continue;
     const res = performRequest(requestContext, entry, `discover-${i}`);
     const debug = extractDebug(res, config.debugField);
-    probes.push({ path: entry.p, status: res.status, samples: scaleTimeSamples(walkDebug(debug), config.debugTimeFactor) });
+    probes.push({
+      path: entry.p,
+      status: res.status,
+      durationMs: res.timings.duration,
+      samples: scaleTimeSamples(walkDebug(debug), config.debugTimeFactor),
+    });
   }
-  return { schema: discoverSchema(config.debugField, probes.map((p) => p.samples)), probes };
+  const avgDurationMs = probes.length > 0 ? probes.reduce((sum, p) => sum + p.durationMs, 0) / probes.length : 0;
+  const schema: DebugSchema = { ...discoverSchema(config.debugField, probes.map((p) => p.samples)), probeAvgMs: avgDurationMs };
+  return { schema, probes };
 }
 
 export default function (): void {
@@ -65,7 +73,7 @@ export function handleSummary(data: SummaryData): Record<string, string> {
       if (!firstValues.has(key)) firstValues.set(key, sample.value);
     }
   }
-  const probeLines = probes.map((p) => `  ${p.status} ${p.path}  (${p.samples.length} samples)`);
+  const probeLines = probes.map((p) => `  ${p.status} ${fmtMs(p.durationMs).padStart(7)} ${p.path}  (${p.samples.length} samples)`);
   const lines = [
     '',
     c.bold(c.cyan(`discover: probed ${probes.length} requests against ${config.prefix}, debug field "${config.debugField}"`)),
@@ -83,11 +91,11 @@ export function handleSummary(data: SummaryData): Record<string, string> {
       ['left', 'left', 'left', 'right'],
     ),
     '',
-    c.green(`schema with ${schema.entries.length} metrics written to ${config.debugSchema}`),
+    c.green(`schema with ${schema.entries.length} metrics written to ${config.debugSchema} (probe avg ${fmtMs(schema.probeAvgMs)}, used to size VUs)`),
     '',
   );
   return {
     stdout: `${lines.join('\n')}\n`,
-    [config.debugSchema]: `${JSON.stringify(schema, null, 2)}\n`,
+    [config.debugSchema]: `${JSON.stringify({ field: schema.field, entries: schema.entries, probe: { avgDurationMs: schema.probeAvgMs ?? 0 } }, null, 2)}\n`,
   };
 }

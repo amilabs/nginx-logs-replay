@@ -3,8 +3,10 @@
  *
  *   k6 run -e PREFIX=https://host -e LOG=access.log src/replay.ts
  *
- * MODE=replay (default) follows the log timeline (RATIO speeds it up);
- * MODE=rate fires the pool at a fixed RPS. See README for every option.
+ * MODE=replay (default) fires every request at exactly its log offset
+ * divided by RATIO; MODE=rate fires the pool at a fixed RPS. VUs are sized
+ * automatically from the busiest second of the plan and the latency measured
+ * by discover.ts (VUS / MAX_VUS override).
  */
 
 import { sleep } from 'k6';
@@ -12,10 +14,10 @@ import exec from 'k6/execution';
 import http from 'k6/http';
 import type { Options } from 'k6/options';
 import { parseConfig } from './lib/config.ts';
-import { buildOptions, replayVus } from './lib/options.ts';
-import { topEndpoints } from './lib/request-pool.ts';
-import { buildOffsets, poolIndex, targetTime } from './lib/schedule.ts';
 import { renderHtmlReport } from './lib/html-report.ts';
+import { buildLoadPlan, buildOptions } from './lib/options.ts';
+import { topEndpoints } from './lib/request-pool.ts';
+import { poolIndex, targetTime } from './lib/schedule.ts';
 import { buildReport, renderReport, type K6SummaryData } from './lib/summary.ts';
 import { declareDebugMetrics, replayLag } from './k6/metrics.ts';
 import { loadSchema, poolTimestamps, sharedPool } from './k6/pool.ts';
@@ -23,26 +25,32 @@ import { createRequestContext, performRequest } from './k6/request.ts';
 
 const config = parseConfig(__ENV);
 const { pool, meta } = sharedPool(config);
-const offsets = buildOffsets(poolTimestamps(pool));
 const schema = loadSchema(config);
+const load = buildLoadPlan({ config, timestamps: poolTimestamps(pool), probeLatencyMs: schema?.probeAvgMs ?? null });
 const requestContext = createRequestContext(config, declareDebugMetrics(schema, config.debugTimeFactor));
-const vus = replayVus(config, pool.length);
 
 // 4xx are legitimate replayed responses; only 5xx and transport errors count as failed.
 http.setResponseCallback(http.expectedStatuses({ min: 200, max: 499 }));
 
 export const options = buildOptions({
   config,
-  poolSize: pool.length,
-  offsets,
+  load,
   topEndpoints: topEndpoints(pool, config.top, config.normalizeEndpoints),
 }) as Options;
 
 export function setup(): void {
   const { stats } = meta;
+  const vus = load.vus.auto
+    ? `auto VUs: ${load.vus.preAllocatedVUs} (peak ${load.peakRps.toFixed(1)} rps × ${load.vus.assumedLatencyMs}ms assumed latency × 2)`
+    : `fixed VUs: ${load.vus.preAllocatedVUs}`;
   console.log(
     `pool: ${stats.kept} requests (${meta.malformed} malformed lines skipped), original span ${Math.round(stats.spanMs / 1000)}s at ${stats.originalRps.toFixed(2)} rps`,
   );
+  if (config.mode === 'replay') {
+    console.log(`replay plan: ${Math.round((load.plannedMs ?? 0) / 1000)}s at ratio x${config.ratio}, busiest second ${load.peakRps.toFixed(1)} rps; ${vus}`);
+  } else {
+    console.log(`rate plan: ${config.rps} rps for ${config.duration}; ${vus}, up to ${load.vus.maxVUs}`);
+  }
   if (schema) {
     console.log(`debug schema: ${schema.entries.length} metrics from "${config.debugSchema}" (field "${schema.field}")`);
   } else {
@@ -52,12 +60,12 @@ export function setup(): void {
 
 function pickIndex(): number | null {
   if (config.mode === 'rate') return exec.scenario.iterationInTest % pool.length;
-  const index = poolIndex(exec.vu.idInTest, exec.vu.iterationInScenario, vus);
+  const index = poolIndex(exec.vu.idInTest, exec.vu.iterationInScenario, load.replayVus);
   return index < pool.length ? index : null;
 }
 
 function waitForSlot(index: number): void {
-  const target = targetTime(exec.scenario.startTime, offsets[index] ?? 0, config.ratio);
+  const target = targetTime(exec.scenario.startTime, load.offsets[index] ?? 0, config.ratio);
   const wait = target - Date.now();
   if (wait > 0) {
     sleep(wait / 1000);
@@ -83,7 +91,9 @@ export function handleSummary(data: K6SummaryData): Record<string, string> {
     schema,
     pool: meta.stats,
     malformed: meta.malformed,
-    vus: config.mode === 'replay' ? vus : config.vus,
+    vus: { ...load.vus, preAllocatedVUs: load.replayVus },
+    targetRps: load.peakRps,
+    plannedMs: load.plannedMs,
   });
   const outputs: Record<string, string> = {
     stdout: renderReport(report, config.top, config.colors),

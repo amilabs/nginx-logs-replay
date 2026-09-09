@@ -9,8 +9,8 @@ describe('parseConfig', () => {
     expect(cfg.prefix).toBe('https://api.example.com');
     expect(cfg.mode).toBe('replay');
     expect(cfg.ratio).toBe(1);
-    expect(cfg.vus).toBe(50);
-    expect(cfg.maxVus).toBe(200);
+    expect(cfg.vus).toBeNull();
+    expect(cfg.maxVus).toBeNull();
     expect(cfg.format).toBe(DEFAULT_FORMAT);
     expect(cfg.timeoutMs).toBe(30_000);
     expect(cfg.debugField).toBe('debug');

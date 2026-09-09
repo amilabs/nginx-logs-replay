@@ -35,7 +35,8 @@ describe('renderHtmlReport', () => {
   it('shows run, log and traffic numbers', () => {
     expect(html).toContain('2026-09-11T08:00:00.000Z → 2026-09-11T08:00:12.000Z');
     expect(html).toContain('120 requests in 12.0s');
-    expect(html).toContain('original 5 · target 10');
+    expect(html).toContain('original 5 · x2 = 10 avg, 12 peak');
+    expect(html).toContain('10, fixed');
     expect(html).toContain('2026-09-10T12:00:00.000Z → 2026-09-10T12:00:24.000Z');
     expect(html).toContain('4 malformed lines skipped');
     expect(html).toContain('234.4 KB (avg 2.0 KB per response)');
@@ -72,7 +73,7 @@ describe('renderHtmlReport', () => {
       state: { testRunDurationMs: 120_000 },
       metrics: { ...data.metrics, iteration_duration: trend(65, 176, 451, 1242, 39), dropped_iterations: counter(12_883) },
     };
-    const out = renderHtmlReport(buildReport(slow, { ...ctx, config: parseConfig({ PREFIX: 'http://h', RATIO: '60', VUS: '5' }) }), 15);
+    const out = renderHtmlReport(buildReport(slow, { ...ctx, config: parseConfig({ PREFIX: 'http://h', RATIO: '60', VUS: '5' }), targetRps: 368.76, plannedMs: 60_000 }), 15);
     expect(out).toContain('Load generator bottleneck.');
     expect(out).toContain('12883 requests were never sent');
     expect(out).toContain('Not sent');

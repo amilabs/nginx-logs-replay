@@ -7,6 +7,7 @@ import type { Config } from './config.ts';
 import type { DebugSchema } from './debug-walker.ts';
 import { fmtBytes, fmtDuration, fmtMs, fmtNum, fmtPct, palette, table } from './format.ts';
 import type { PoolStats } from './request-pool.ts';
+import type { VuAllocation } from './schedule.ts';
 
 /** Subset of the k6 handleSummary `data` argument that the report uses. */
 export interface K6Metric {
@@ -25,8 +26,12 @@ export interface ReportContext {
   readonly schema: DebugSchema | null;
   readonly pool: PoolStats;
   readonly malformed: number;
-  /** VUs actually allocated (replay caps them at the pool size). */
-  readonly vus?: number;
+  /** VU allocation (preAllocatedVUs = VUs the scenario actually ran with). */
+  readonly vus: VuAllocation;
+  /** Wall-clock rps the plan aims at: busiest second for replay, RPS for rate. */
+  readonly targetRps: number;
+  /** Planned wall-clock length of a replay (null for rate mode). */
+  readonly plannedMs: number | null;
   /** Wall-clock end of the run; defaults to now. */
   readonly finishedAt?: Date;
 }
@@ -62,8 +67,11 @@ export interface HeaderSection {
   readonly ratio: number;
   readonly rps: number;
   readonly duration: string;
+  readonly plannedMs: number | null;
   readonly vus: number;
   readonly maxVus: number;
+  readonly vusAuto: boolean;
+  readonly assumedLatencyMs: number;
   readonly requests: number;
 }
 
@@ -170,13 +178,16 @@ function buildHeader(data: K6SummaryData, ctx: ReportContext): HeaderSection {
     logTo: iso(ctx.pool.lastTs),
     spanMs: ctx.pool.spanMs,
     originalRps: ctx.pool.originalRps,
-    targetRps: mode === 'replay' ? ctx.pool.originalRps * ctx.config.ratio : ctx.config.rps,
+    targetRps: ctx.targetRps,
     achievedRps: num(metricValue(data, 'http_reqs', 'rate')),
     ratio: ctx.config.ratio,
     rps: ctx.config.rps,
     duration: ctx.config.duration,
-    vus: ctx.vus ?? ctx.config.vus,
-    maxVus: mode === 'rate' ? ctx.config.maxVus : (ctx.vus ?? ctx.config.vus),
+    plannedMs: ctx.plannedMs,
+    vus: ctx.vus.preAllocatedVUs,
+    maxVus: ctx.vus.maxVUs,
+    vusAuto: ctx.vus.auto,
+    assumedLatencyMs: ctx.vus.assumedLatencyMs,
     requests: num(metricValue(data, 'http_reqs', 'count')),
   };
 }
@@ -188,7 +199,9 @@ function buildHttp(data: K6SummaryData, header: HeaderSection): HttpSection {
   const dataReceived = num(metricValue(data, 'data_received', 'count'));
   const dropped = num(metricValue(data, 'dropped_iterations', 'count'));
   const iterationAvgMs = num(metricValue(data, 'iteration_duration', 'avg'));
-  const behind = (lagP95 !== null && lagP95 > 1000) || dropped > 0 || header.achievedRps < header.targetRps * 0.9;
+  // Replay: compare with the average rate of the plan; rate mode: with the configured rps.
+  const expectedRps = header.plannedMs && header.plannedMs > 0 ? (header.poolKept * 1000) / header.plannedMs : header.targetRps;
+  const behind = (lagP95 !== null && lagP95 > 1000) || dropped > 0 || (expectedRps > 0 && header.achievedRps < expectedRps * 0.9);
   const suggestedVus =
     behind && header.targetRps > 0 && iterationAvgMs > 0 ? Math.ceil((header.targetRps * iterationAvgMs * 1.5) / 1000) : null;
   return {
@@ -287,10 +300,11 @@ const PCT_HEADERS = ['min', 'avg', 'p50', 'p90', 'p95', 'p99', 'max'];
 
 function renderHeader(h: HeaderSection, colors: boolean): string {
   const c = palette(colors);
+  const vus = h.vusAuto ? `auto VUs ${h.vus} (assumed ${h.assumedLatencyMs}ms latency)` : `fixed VUs ${h.vus}`;
   const load =
     h.mode === 'replay'
-      ? `ratio x${fmtNum(h.ratio)} (target ${fmtNum(h.targetRps)} rps), max ${h.vus} VUs`
-      : `${fmtNum(h.rps)} rps for ${h.duration}, ${h.vus} VUs (max ${h.maxVus})`;
+      ? `ratio x${fmtNum(h.ratio)} (planned ${fmtDuration(h.plannedMs ?? 0)}, busiest second ${fmtNum(h.targetRps)} rps), ${vus}`
+      : `${fmtNum(h.rps)} rps for ${h.duration}, ${vus}, up to ${h.maxVus}`;
   const malformed = h.malformed > 0 ? c.yellow(`, ${h.malformed} malformed lines skipped`) : '';
   return [
     c.bold(c.cyan(`nginx-logs-replay  mode=${h.mode}  target=${h.prefix}`)),
@@ -324,10 +338,10 @@ function renderHttp(s: HttpSection, colors: boolean): string {
 /** One-line diagnosis when the load generator, not the target, was the bottleneck. */
 export function capacityWarning(s: HttpSection): string | null {
   const parts: string[] = [];
-  if (s.dropped > 0) parts.push(`${s.dropped} requests were never sent (run hit its max duration)`);
+  if (s.dropped > 0) parts.push(`${s.dropped} requests were never sent (run hit its max duration / no free VU)`);
   if (s.lagP95 !== null && s.lagP95 > 1000) parts.push('requests fired late');
   if (parts.length === 0 && s.suggestedVus === null) return null;
-  const advice = s.suggestedVus !== null ? `the client could not keep up: set VUS to about ${s.suggestedVus} or lower the rate` : 'the client could not keep up: raise VUS or lower the rate';
+  const advice = s.suggestedVus !== null ? `the load generator could not keep up: set VUS to about ${s.suggestedVus} or lower the rate` : 'the load generator could not keep up: raise VUS or lower the rate';
   return `${parts.length > 0 ? `${parts.join(', ')}; ` : ''}${advice}`;
 }
 

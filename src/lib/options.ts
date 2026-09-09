@@ -4,7 +4,7 @@
  */
 
 import type { Config } from './config.ts';
-import { iterationsPerVu, replayMaxDuration } from './schedule.ts';
+import { allocateVus, buildOffsets, iterationsPerVu, peakRps, replayMaxDuration, replaySpanMs, type VuAllocation } from './schedule.ts';
 
 export const SCENARIO_NAME = 'nginx_replay';
 export const TREND_STATS = ['avg', 'min', 'med', 'p(75)', 'p(90)', 'p(95)', 'p(99)', 'p(99.9)', 'max'] as const;
@@ -35,48 +35,79 @@ export function buildThresholds(endpoints: readonly EndpointCount[]): Thresholds
   return Object.fromEntries(entries);
 }
 
-export interface ScenarioInput {
-  readonly config: Config;
-  readonly poolSize: number;
+export interface LoadPlan {
+  readonly scenario: Record<string, unknown>;
+  readonly vus: VuAllocation;
+  /** VUs the replay scenario actually runs with (capped at the pool size); equals preAllocatedVUs in rate mode. */
+  readonly replayVus: number;
+  /** Wall-clock rps the plan aims at: busiest second for replay, RPS for rate. */
+  readonly peakRps: number;
+  /** Replay only: wall-clock offset per pool index (ms) and planned length. */
   readonly offsets: readonly number[];
+  readonly plannedMs: number | null;
 }
 
-/** VUs actually used by the replay scenario: never more than requests. */
-export function replayVus(config: Config, poolSize: number): number {
-  return Math.max(1, Math.min(config.vus, poolSize));
+export interface LoadInput {
+  readonly config: Config;
+  /** Sorted pool timestamps (ms). */
+  readonly timestamps: readonly number[];
+  /** Average request duration measured by discover probes, if known. */
+  readonly probeLatencyMs?: number | null;
 }
 
-export function buildScenario(input: ScenarioInput): Record<string, unknown> {
-  const { config, poolSize, offsets } = input;
+/** Scenario + VU allocation for the configured mode. */
+export function buildLoadPlan(input: LoadInput): LoadPlan {
+  const { config, timestamps } = input;
+  const latency = input.probeLatencyMs ?? null;
   if (config.mode === 'rate') {
+    const vus = allocateVus(config.rps, config.vus, config.maxVus, latency);
     return {
-      executor: 'constant-arrival-rate',
-      rate: config.rps,
-      timeUnit: '1s',
-      duration: config.duration,
-      preAllocatedVUs: config.vus,
-      maxVUs: config.maxVus,
-      gracefulStop: config.timeout,
+      scenario: {
+        executor: 'constant-arrival-rate',
+        rate: config.rps,
+        timeUnit: '1s',
+        duration: config.duration,
+        preAllocatedVUs: vus.preAllocatedVUs,
+        maxVUs: vus.maxVUs,
+        gracefulStop: config.timeout,
+      },
+      vus,
+      replayVus: vus.preAllocatedVUs,
+      peakRps: config.rps,
+      offsets: [],
+      plannedMs: null,
     };
   }
-  const vus = replayVus(config, poolSize);
+  const offsets = buildOffsets(timestamps);
+  const peak = peakRps(offsets, config.ratio);
+  const vus = allocateVus(peak, config.vus, config.maxVus, latency);
+  const replayVus = Math.max(1, Math.min(vus.preAllocatedVUs, timestamps.length));
   return {
-    executor: 'per-vu-iterations',
+    scenario: {
+      executor: 'per-vu-iterations',
+      vus: replayVus,
+      iterations: Math.max(1, iterationsPerVu(timestamps.length, replayVus)),
+      maxDuration: replayMaxDuration(offsets, config.ratio, config.timeoutMs),
+      gracefulStop: config.timeout,
+    },
     vus,
-    iterations: Math.max(1, iterationsPerVu(poolSize, vus)),
-    maxDuration: replayMaxDuration(offsets, config.ratio, config.timeoutMs),
-    gracefulStop: config.timeout,
+    replayVus,
+    peakRps: peak,
+    offsets,
+    plannedMs: replaySpanMs(offsets, config.ratio),
   };
 }
 
-export interface OptionsInput extends ScenarioInput {
+export interface OptionsInput {
+  readonly config: Config;
+  readonly load: LoadPlan;
   readonly topEndpoints: readonly EndpointCount[];
 }
 
 /** Full k6 options object for replay.ts. */
 export function buildOptions(input: OptionsInput): Record<string, unknown> {
   return {
-    scenarios: { [SCENARIO_NAME]: buildScenario(input) },
+    scenarios: { [SCENARIO_NAME]: input.load.scenario },
     thresholds: buildThresholds(input.topEndpoints),
     summaryTrendStats: [...TREND_STATS],
     insecureSkipTLSVerify: input.config.insecure,
