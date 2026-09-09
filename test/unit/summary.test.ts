@@ -211,8 +211,9 @@ describe('buildReport', () => {
     };
     const okRun = buildReport(rateData, { ...ctx, config: parseConfig({ PREFIX: 'http://h', MODE: 'rate', RPS: '5' }), targetRps: 5, plannedMs: null, probeAvgMs: 60 });
     expect(okRun.capacity.verdict).toContain('No degradation at 5 rps (p95 90ms vs 60ms baseline). Try RPS=8');
-    const slowRun = buildReport(rateData, { ...ctx, config: parseConfig({ PREFIX: 'http://h', MODE: 'rate', RPS: '5' }), targetRps: 5, plannedMs: null, probeAvgMs: 10 });
-    expect(slowRun.capacity.verdict).toContain('Degraded at 5 rps: p95 90ms vs 10ms baseline. Try RPS=4');
+    const slowData: K6SummaryData = { metrics: { ...rateData.metrics, 'http_req_duration{load:5}': trend(400, 900, 1200, 1500, 380) } };
+    const slowRun = buildReport(slowData, { ...ctx, config: parseConfig({ PREFIX: 'http://h', MODE: 'rate', RPS: '5' }), targetRps: 5, plannedMs: null, probeAvgMs: 60 });
+    expect(slowRun.capacity.verdict).toContain('Degraded at 5 rps: p95 900ms vs 60ms baseline. Try RPS=4');
   });
 });
 
