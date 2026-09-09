@@ -43,6 +43,8 @@ describe('renderHtmlReport', () => {
     expect(html).toContain('6 × 5xx / transport');
     expect(html).toContain('Schedule lag p95');
     expect(html).toContain('<th>p99.9</th>');
+    expect(html).toContain('429→200 ×2');
+    expect(html).toContain('<td>429 → 200</td><td>2</td><td>66.67%</td>');
   });
 
   it('renders components and endpoints with charts and rps', () => {

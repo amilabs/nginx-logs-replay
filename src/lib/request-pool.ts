@@ -26,6 +26,8 @@ export interface PoolFilter {
   readonly limit: number;
   readonly filterOnly: readonly string[];
   readonly filterSkip: readonly string[];
+  /** Original status codes to drop (empty = keep all). */
+  readonly skipStatuses?: readonly number[];
 }
 
 export interface PoolStats {
@@ -49,6 +51,7 @@ export function buildPool(entries: readonly LogEntry[], filter: PoolFilter): Poo
     if (entry.timestamp < startMs) return false;
     if (filter.filterOnly.length > 0 && !matchesAny(entry.path, filter.filterOnly)) return false;
     if (filter.filterSkip.length > 0 && matchesAny(entry.path, filter.filterSkip)) return false;
+    if (filter.skipStatuses && filter.skipStatuses.includes(entry.status)) return false;
     return true;
   });
   const sorted = kept
@@ -140,6 +143,13 @@ export function buildUrl(path: string, options: UrlOptions): string {
     ? [...options.queryParams, [options.cacheBuster, options.nonce]]
     : [...options.queryParams];
   return `${options.prefix}${setQueryParams(path, extra)}`;
+}
+
+/** Distinct original status codes in the pool, ascending. */
+export function poolStatuses(pool: readonly PoolEntry[]): number[] {
+  const seen = new Set<number>();
+  for (const entry of pool) seen.add(entry.st);
+  return [...seen].sort((a, b) => a - b);
 }
 
 /** Most frequent endpoints in the pool, descending by count. */

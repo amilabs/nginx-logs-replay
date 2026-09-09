@@ -76,6 +76,7 @@ async function main() {
     assert.equal(replay.report.header.malformed, 1);
     assert.equal(replay.report.http.count, POOL_SIZE);
     assert.equal(replay.report.http.mismatches, 1, 'only /nodebug (404 in log, 200 served) mismatches');
+    assert.deepEqual(replay.report.http.mismatchPairs, [{ from: 404, to: 200, count: 1 }], 'mismatch pair recorded');
     assert.ok(replay.report.http.failedRate > 0 && replay.report.http.failedRate < 0.1, '/fail counted as failed');
     assert.equal(replay.report.debug.missing, 3, '/fail, /nodebug and /html have no debug block');
     assert.equal(replay.report.debug.unknownPaths, 0);
@@ -101,6 +102,12 @@ async function main() {
     assert.ok(received.every((r) => !r.url.includes('apiKey=freekey')), 'apiKey overridden');
     assert.ok(received.some((r) => r.ua === 'curl/8.0'), 'user agent replayed from log');
     assert.ok(received.some((r) => r.method === 'POST'), 'method replayed from log');
+
+    console.log('e2e: skip statuses');
+    runK6(k6, path.join(root, 'src', 'replay.ts'), { ...common, RATIO: '10', SKIP_STATUSES: '404,500' }, root);
+    const skipped = JSON.parse(readFileSync(summaryPath, 'utf8'));
+    assert.equal(skipped.report.header.poolKept, POOL_SIZE - 2, '/nodebug (404) and /fail (500) skipped');
+    assert.equal(skipped.report.http.mismatches, 0);
 
     console.log('e2e: rate mode');
     runK6(k6, path.join(root, 'src', 'replay.ts'), { ...common, MODE: 'rate', RPS: '20', DURATION: '2s' }, root);

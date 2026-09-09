@@ -78,11 +78,21 @@ export interface HeaderSection {
   readonly requests: number;
 }
 
+export interface MismatchPair {
+  /** Status code in the log. */
+  readonly from: number;
+  /** Status code (bucket) received on replay. */
+  readonly to: number;
+  readonly count: number;
+}
+
 export interface HttpSection {
   readonly count: number;
   readonly failedRate: number;
   readonly failed: number;
   readonly mismatches: number;
+  /** Mismatches by (log status -> replayed status), descending. */
+  readonly mismatchPairs: readonly MismatchPair[];
   readonly duration: Percentiles;
   /** Time to first byte (http_req_waiting). */
   readonly ttfb: Percentiles;
@@ -133,6 +143,17 @@ export interface Report {
 }
 
 const SUBMETRIC_RE = /^([a-zA-Z0-9_]+)\{endpoint:(.*)\}$/;
+const MISMATCH_PAIR_RE = /^replay_status_mismatch\{from:(\d+),to:(\d+)\}$/;
+
+function mismatchPairs(data: K6SummaryData): MismatchPair[] {
+  const pairs: MismatchPair[] = [];
+  for (const [name, metric] of Object.entries(data.metrics)) {
+    const match = MISMATCH_PAIR_RE.exec(name);
+    const count = metric.values.count ?? 0;
+    if (match && count > 0) pairs.push({ from: Number(match[1]), to: Number(match[2]), count });
+  }
+  return pairs.sort((a, b) => b.count - a.count || a.from - b.from || a.to - b.to);
+}
 
 function metricValue(data: K6SummaryData, name: string, key: string): number | null {
   const value = data.metrics[name]?.values[key];
@@ -218,6 +239,7 @@ function buildHttp(data: K6SummaryData, header: HeaderSection): HttpSection {
     // k6 Rate metrics count `passes` as non-zero samples: for http_req_failed a "pass" IS a failed request.
     failed: metricValue(data, 'http_req_failed', 'passes') ?? Math.round(failedRate * count),
     mismatches: num(metricValue(data, 'replay_status_mismatch', 'count')),
+    mismatchPairs: mismatchPairs(data),
     duration: percentiles(data, 'http_req_duration') ?? EMPTY,
     ttfb: percentiles(data, 'http_req_waiting') ?? EMPTY,
     connectingAvg: num(metricValue(data, 'http_req_connecting', 'avg')),
@@ -330,12 +352,14 @@ function renderHttp(s: HttpSection, colors: boolean, capacity: string | null): s
   const c = palette(colors);
   const failed = s.failedRate > 0 ? c.red(`${s.failed} (${fmtPct(s.failedRate)})`) : c.green(fmtPct(s.failedRate));
   const mismatch = s.mismatches > 0 ? c.yellow(String(s.mismatches)) : String(s.mismatches);
+  const pairs = s.mismatchPairs.slice(0, 8).map((p) => `${p.from}→${p.to} ×${p.count}`).join(', ');
   const lines = [
     c.bold('HTTP'),
     `requests ${s.count}   failed (5xx/transport) ${failed}   status != log ${mismatch}   received ${fmtBytes(s.dataReceived)} (avg ${fmtBytes(s.avgBodyBytes)}/resp)   sent ${fmtBytes(s.dataSent)}`,
     table(['', ...PCT_HEADERS], [['duration', ...pctCells(s.duration)], ['ttfb', ...pctCells(s.ttfb)]]),
     c.dim(`connecting avg ${fmtMs(s.connectingAvg)}  tls avg ${fmtMs(s.tlsAvg)}`),
   ];
+  if (pairs) lines.push(c.yellow(`status != log by pair (log→replay): ${pairs}${s.mismatchPairs.length > 8 ? ', …' : ''}`));
   if (s.lagP95 !== null) {
     const lag = `schedule lag p95 ${fmtMs(s.lagP95)}  max ${fmtMs(s.lagMax)}`;
     lines.push(num(s.lagP95) > 1000 ? c.yellow(lag) : c.dim(lag));

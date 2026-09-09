@@ -16,7 +16,7 @@ import type { Options } from 'k6/options';
 import { parseConfig } from './lib/config.ts';
 import { renderHtmlReport } from './lib/html-report.ts';
 import { buildLoadPlan, buildOptions } from './lib/options.ts';
-import { topEndpoints } from './lib/request-pool.ts';
+import { poolStatuses, topEndpoints } from './lib/request-pool.ts';
 import { poolIndex, targetTime } from './lib/schedule.ts';
 import { buildReport, renderReport, type K6SummaryData } from './lib/summary.ts';
 import { declareDebugMetrics, replayLag } from './k6/metrics.ts';
@@ -30,6 +30,7 @@ const schema = loadSchema(config);
 const derived = sharedOnce('plan', () => ({
   load: buildLoadPlan({ config, timestamps: poolTimestamps(pool), probeLatencyMs: schema?.probeAvgMs ?? null }),
   top: topEndpoints(pool, config.top, config.normalizeEndpoints),
+  statuses: poolStatuses(pool),
 }));
 const load = derived.load;
 const requestContext = createRequestContext(config, declareDebugMetrics(schema, config.debugTimeFactor));
@@ -41,6 +42,7 @@ export const options = buildOptions({
   config,
   load,
   topEndpoints: derived.top,
+  logStatuses: derived.statuses,
 }) as Options;
 
 export function setup(): void {

@@ -6,6 +6,7 @@ import {
   endpointOf,
   endpointTag,
   poolStats,
+  poolStatuses,
   setQueryParams,
   topEndpoints,
 } from '../../src/lib/request-pool.ts';
@@ -33,6 +34,12 @@ describe('buildPool', () => {
     expect(buildPool(entries, { ...noFilter, filterOnly: ['/api'] }).map((e) => e.p)).toEqual(['/api/x', '/api/y.php', '/api/z']);
     expect(buildPool(entries, { ...noFilter, filterOnly: ['/api'], filterSkip: ['.php'] }).map((e) => e.p)).toEqual(['/api/x', '/api/z']);
     expect(buildPool(entries, { ...noFilter, limit: 2 }).map((e) => e.p)).toEqual(['/api/x', '/api/y.php']);
+  });
+
+  it('drops entries by original status and lists distinct statuses', () => {
+    const entries = [entry('/a', 1, 200), entry('/b', 2, 429), entry('/c', 3, 406), entry('/d', 4, 200)];
+    expect(buildPool(entries, { ...noFilter, skipStatuses: [429, 406] }).map((e) => e.p)).toEqual(['/a', '/d']);
+    expect(poolStatuses(buildPool(entries, noFilter))).toEqual([200, 406, 429]);
   });
 });
 

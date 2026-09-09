@@ -28,6 +28,11 @@ describe('parseConfig', () => {
     expect(cfg.dashboardHref).toBe('k6-dashboard.html');
   });
 
+  it('rejects bad SKIP_STATUSES', () => {
+    expect(() => parseConfig({ ...base, SKIP_STATUSES: '429,teapot' })).toThrow(/SKIP_STATUSES/);
+    expect(parseConfig(base).skipStatuses).toEqual([]);
+  });
+
   it('rejects an unknown DEBUG_TIME_UNIT', () => {
     expect(() => parseConfig({ ...base, DEBUG_TIME_UNIT: 'minutes' })).toThrow(/DEBUG_TIME_UNIT/);
   });
@@ -45,6 +50,7 @@ describe('parseConfig', () => {
       LIMIT: '500',
       FILTER_ONLY: '/api, /service',
       FILTER_SKIP: '.php',
+      SKIP_STATUSES: '429, 406',
       QUERY_PARAMS: 'apiKey=freekey&debug=1&flag',
       CACHE_BUSTER: 'cb',
       TIMEOUT: '5s',
@@ -69,6 +75,7 @@ describe('parseConfig', () => {
     expect(cfg.limit).toBe(500);
     expect(cfg.filterOnly).toEqual(['/api', '/service']);
     expect(cfg.filterSkip).toEqual(['.php']);
+    expect(cfg.skipStatuses).toEqual([429, 406]);
     expect(cfg.queryParams).toEqual([
       ['apiKey', 'freekey'],
       ['debug', '1'],

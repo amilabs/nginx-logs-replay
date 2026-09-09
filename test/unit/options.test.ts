@@ -16,6 +16,13 @@ describe('buildThresholds', () => {
     ]);
     expect(thresholds['http_req_duration{endpoint:/api/v1/x}']).toEqual(['max>=0']);
   });
+
+  it('adds mismatch pair sub-metrics for the log statuses', () => {
+    const thresholds = buildThresholds([], [200, 429]);
+    expect(thresholds).toHaveProperty('replay_status_mismatch{from:429,to:200}');
+    expect(thresholds).toHaveProperty('replay_status_mismatch{from:200,to:429}');
+    expect(thresholds).not.toHaveProperty('replay_status_mismatch{from:200,to:200}');
+  });
 });
 
 describe('buildLoadPlan', () => {

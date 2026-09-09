@@ -26,6 +26,8 @@ export interface Config {
   readonly limit: number;
   readonly filterOnly: readonly string[];
   readonly filterSkip: readonly string[];
+  /** Log entries with these original status codes are not replayed (e.g. 429 rejected by a rate limiter). */
+  readonly skipStatuses: readonly number[];
   readonly queryParams: readonly (readonly [string, string])[];
   readonly cacheBuster: string;
   readonly timeout: string;
@@ -202,6 +204,11 @@ export function parseConfig(env: Env): Config {
     problems.push('FORMAT must contain $time_local or $msec');
   }
 
+  const skipStatuses = splitList(env.SKIP_STATUSES).map(Number);
+  if (skipStatuses.some((code) => !Number.isInteger(code) || code < 100 || code > 599)) {
+    problems.push(`SKIP_STATUSES must be a comma-separated list of HTTP status codes, got "${env.SKIP_STATUSES}"`);
+  }
+
   const debugField = (env.DEBUG_FIELD ?? DEFAULTS.debugField).trim();
   if (!debugField) problems.push('DEBUG_FIELD must not be empty (use DEBUG_SCHEMA=none to disable debug metrics)');
 
@@ -231,6 +238,7 @@ export function parseConfig(env: Env): Config {
     limit,
     filterOnly: splitList(env.FILTER_ONLY),
     filterSkip: splitList(env.FILTER_SKIP),
+    skipStatuses,
     queryParams: parseQueryParams(env.QUERY_PARAMS),
     cacheBuster: (env.CACHE_BUSTER ?? '').trim(),
     timeout,

@@ -1,7 +1,7 @@
 // Shared pipeline for two Jenkins jobs (parameters are defined in the devops
 // job DSL, terraform/modules/jenkins/jobs/root/scripts/):
-//   nginx-logs-replay  — params AGENT, FILE, PREFIX, RATIO, VUS, QUERY_PARAMS, EXTRA_ENV
-//   nginx-logs-rate    — params AGENT, FILE, PREFIX, RPS, DURATION, VUS, QUERY_PARAMS, EXTRA_ENV
+//   nginx-logs-replay  — params AGENT, FILE, PREFIX, RATIO, VUS, QUERY_PARAMS, SKIP_STATUSES, EXTRA_ENV
+//   nginx-logs-rate    — params AGENT, FILE, PREFIX, RPS, DURATION, VUS, QUERY_PARAMS, SKIP_STATUSES, EXTRA_ENV
 // The mode is derived from which parameters the job has (RPS => rate).
 // Always on: a per-request cache buster (CACHE_BUSTER=cb) and DEBUG_TIME_UNIT=s
 // (Ethplorer-style debug blocks report seconds).
@@ -28,6 +28,7 @@ pipeline {
                     env.VUS = params.VUS ?: ''
                     env.PREFIX = params.PREFIX
                     env.QUERY_PARAMS = params.QUERY_PARAMS ?: ''
+                    env.SKIP_STATUSES = params.SKIP_STATUSES ?: ''
                     env.EXTRA_ENV = params.EXTRA_ENV ?: ''
                     if (!env.PREFIX) error('PREFIX is required')
                     echo "mode=${env.MODE} ratio=${env.RATIO} rps=${env.RPS} duration=${env.DURATION} vus=${env.VUS} target=${env.PREFIX} query=${env.QUERY_PARAMS}"
@@ -68,8 +69,8 @@ pipeline {
             steps {
                 sh '''
                     docker run --rm --network=host -v "$WORK:/work" "$IMAGE" \
-                        -e PREFIX="$PREFIX" -e QUERY_PARAMS="$QUERY_PARAMS" -e CACHE_BUSTER=cb -e DEBUG_TIME_UNIT=s \
-                        -e DISCOVER_N=20 -e NO_COLOR=1 $EXTRA_ENV /app/src/discover.ts
+                        -e PREFIX="$PREFIX" -e QUERY_PARAMS="$QUERY_PARAMS" -e SKIP_STATUSES="$SKIP_STATUSES" \
+                        -e CACHE_BUSTER=cb -e DEBUG_TIME_UNIT=s -e DISCOVER_N=20 -e NO_COLOR=1 $EXTRA_ENV /app/src/discover.ts
                 '''
             }
         }
@@ -83,7 +84,7 @@ pipeline {
                         -e K6_WEB_DASHBOARD=true -e K6_WEB_DASHBOARD_EXPORT=/work/k6-dashboard.html -e K6_WEB_DASHBOARD_PERIOD=1s \
                         "$IMAGE" \
                         -e PREFIX="$PREFIX" -e MODE="$MODE" -e RATIO="$RATIO" -e RPS="$RPS" \
-                        -e DURATION="$DURATION" -e VUS="$VUS" -e QUERY_PARAMS="$QUERY_PARAMS" \
+                        -e DURATION="$DURATION" -e VUS="$VUS" -e QUERY_PARAMS="$QUERY_PARAMS" -e SKIP_STATUSES="$SKIP_STATUSES" \
                         -e CACHE_BUSTER=cb -e DEBUG_TIME_UNIT=s -e DASHBOARD_HREF=k6-dashboard.html -e NO_COLOR=1 $EXTRA_ENV \
                         /app/src/replay.ts >/dev/null
                     docker logs -f "$CONTAINER"

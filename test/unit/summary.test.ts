@@ -40,6 +40,9 @@ export const data: K6SummaryData = {
     'http_req_duration{endpoint:/a}': trend(40, 100, 250, 900, 35),
     'http_req_failed{endpoint:/a}': rateMetric(0.01),
     'replay_status_mismatch{endpoint:/a}': counter(3),
+    'replay_status_mismatch{from:429,to:200}': counter(2),
+    'replay_status_mismatch{from:200,to:503}': counter(1),
+    'replay_status_mismatch{from:404,to:200}': counter(0),
     'http_reqs{endpoint:/b}': counter(20),
     'http_req_duration{endpoint:/b}': trend(80, 200, 300, 400, 70),
     'http_req_failed{endpoint:/b}': rateMetric(0.25),
@@ -92,6 +95,10 @@ describe('buildReport', () => {
       failedRate: 0.05,
       failed: 6,
       mismatches: 3,
+      mismatchPairs: [
+        { from: 429, to: 200, count: 2 },
+        { from: 200, to: 503, count: 1 },
+      ],
       duration: { min: 1, avg: 50, p50: 40, p75: 80, p90: 120, p95: 120, p99: 300, p999: 900, max: 900 },
       ttfb: { avg: 45, p95: 110 },
       connectingAvg: 2,
@@ -180,6 +187,7 @@ describe('renderReport', () => {
     expect(text).toContain('failed (5xx/transport) 6 (5.00%)   status != log 3   received 234.4 KB (avg 2.0 KB/resp)   sent 11.7 KB');
     expect(text).toMatch(/duration\s+1\.00ms\s+50\.0ms\s+40\.0ms\s+120ms\s+120ms\s+300ms\s+900ms/);
     expect(text).toMatch(/ttfb\s+1\.00ms\s+45\.0ms/);
+    expect(text).toContain('status != log by pair (log→replay): 429→200 ×2, 200→503 ×1');
     expect(text).toContain('schedule lag p95 20.0ms  max 60.0ms');
     expect(text).toContain('COMPONENTS');
     expect(text).toMatch(/clickhouse\s+1\.00ms\s+30\.0ms\s+30\.0ms\s+90\.0ms\s+90\.0ms\s+200ms\s+700ms\s+120/);

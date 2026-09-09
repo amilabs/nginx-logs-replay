@@ -33,6 +33,18 @@ function headersFor(ctx: RequestContext, entry: PoolEntry): Record<string, strin
   return { ...ctx.baseHeaders, 'User-Agent': entry.ua };
 }
 
+/** Replayed status codes are grouped into a fixed set so that sub-metrics can be declared at init. */
+export const STATUS_BUCKETS = [0, 200, 201, 204, 301, 302, 304, 400, 401, 403, 404, 405, 406, 408, 409, 410, 422, 429, 500, 502, 503, 504] as const;
+
+export function statusBucket(status: number): number {
+  if ((STATUS_BUCKETS as readonly number[]).includes(status)) return status;
+  if (status >= 500) return 500;
+  if (status >= 400) return 400;
+  if (status >= 300) return 302;
+  if (status >= 200) return 200;
+  return 0;
+}
+
 /** Parses the JSON body and extracts the debug object; undefined when absent. */
 export function extractDebug(res: Response, debugField: string): unknown {
   try {
@@ -57,7 +69,7 @@ export function performRequest(ctx: RequestContext, entry: PoolEntry, nonce: str
     tags,
     timeout: ctx.config.timeout,
   });
-  if (res.status !== entry.st) statusMismatch.add(1, tags);
+  if (res.status !== entry.st) statusMismatch.add(1, { ...tags, from: String(entry.st), to: String(statusBucket(res.status)) });
   if (ctx.metrics) recordDebug(ctx.metrics, extractDebug(res, ctx.config.debugField), tags);
   return res;
 }

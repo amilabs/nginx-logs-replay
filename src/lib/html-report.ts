@@ -79,7 +79,7 @@ ${card('Requests', String(h.requests), `in ${fmtDuration(h.testDurationMs)}`)}
 ${card('Achieved RPS', fmtNum(h.achievedRps), h.mode === 'replay' ? `original ${fmtNum(h.originalRps)} · x${fmtNum(h.ratio)} = ${fmtNum(h.originalRps * h.ratio)} avg, ${fmtNum(h.targetRps)} peak` : `target ${fmtNum(h.targetRps)}`, rpsCls)}
 ${load}
 ${card('Failed', fmtPct(s.failedRate), `${s.failed} × 5xx / transport`, s.failedRate > 0 ? 'bad' : 'ok')}
-${card('Status ≠ log', String(s.mismatches), 'replayed status differs from the log', s.mismatches > 0 ? 'warn' : '')}
+${card('Status ≠ log', String(s.mismatches), s.mismatchPairs.length > 0 ? s.mismatchPairs.slice(0, 3).map((p) => `${p.from}→${p.to} ×${p.count}`).join(', ') : 'replayed status differs from the log', s.mismatches > 0 ? 'warn' : '')}
 ${card('p50', fmtMs(s.duration.p50), `avg ${fmtMs(s.duration.avg)}`)}
 ${card('p95', fmtMs(s.duration.p95), `p99 ${fmtMs(s.duration.p99)}`)}
 ${card('max', fmtMs(s.duration.max), `min ${fmtMs(s.duration.min)}`)}
@@ -87,6 +87,17 @@ ${lag}
 ${s.dropped > 0 ? card('Not sent', String(s.dropped), 'no free VU / max duration', 'bad') : ''}
 </div>
 ${warning ? `<div class="note">${escapeHtml(warning)}</div>` : ''}`;
+}
+
+function renderMismatches(s: HttpSection): string {
+  if (s.mismatchPairs.length === 0) return '';
+  const rows = s.mismatchPairs
+    .map((p) => `<tr><td>${p.from} → ${p.to}</td><td>${p.count}</td><td>${fmtPct(s.mismatches > 0 ? p.count / s.mismatches : 0)}</td></tr>`)
+    .join('\n');
+  return `<h2>Status ≠ log <small>(status in the log → status received on replay; 429/406 in the log usually mean the production rate limiter rejected the request, so replaying it puts more load on the backend than production saw — use SKIP_STATUSES=429,406 to replay only what production served)</small></h2>
+<table><thead><tr><th>log → replay</th><th>count</th><th>share</th></tr></thead><tbody>
+${rows}
+</tbody></table>`;
 }
 
 function renderRun(h: HeaderSection, s: HttpSection): string {
@@ -215,6 +226,7 @@ export function renderHtmlReport(report: Report, top: number, options: HtmlRepor
 ${dashboard}
 ${renderCards(h, report.http, capacityWarning(report))}
 ${renderRun(h, report.http)}
+${renderMismatches(report.http)}
 ${renderLatency(report.http)}
 ${renderComponents(report)}
 ${renderEndpoints(report.endpoints, top)}
