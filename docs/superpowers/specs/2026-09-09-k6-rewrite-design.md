@@ -72,6 +72,7 @@ examples/              sample access.log, debug-schema.example.json
 | `ENDPOINT_NORMALIZE` | `true` | `/x/0xabc…` -> `/x/:hex` (also `:n`, `:uuid`, `:hash`) for the `endpoint` tag |
 | `DISCOVER_N` | `5` | discover: requests to probe |
 | `DEBUG_FIELD` | `debug` | dotted path to the debug object in the JSON body |
+| `DEBUG_TIME_UNIT` | `ms` | unit of debug `time` values (`ms`, `s`, `us`); metrics are always ms |
 | `DEBUG_SCHEMA` | `./debug-schema.json` | schema produced by `discover.ts`; missing file = no component metrics |
 | `TOP` | `15` | endpoints shown in summary / given per-endpoint sub-metrics |
 | `SUMMARY_JSON` | `./summary.json` | machine-readable summary path |

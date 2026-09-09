@@ -33,6 +33,8 @@ export interface Config {
   readonly userAgent: string;
   readonly normalizeEndpoints: boolean;
   readonly debugField: string;
+  /** Factor that converts debug `time` values to milliseconds (1 for ms, 1000 for s). */
+  readonly debugTimeFactor: number;
   readonly debugSchema: string;
   readonly discoverN: number;
   readonly top: number;
@@ -185,6 +187,12 @@ export function parseConfig(env: Env): Config {
   const debugField = (env.DEBUG_FIELD ?? DEFAULTS.debugField).trim();
   if (!debugField) problems.push('DEBUG_FIELD must not be empty (use DEBUG_SCHEMA=none to disable debug metrics)');
 
+  const debugTimeUnit = (env.DEBUG_TIME_UNIT ?? 'ms').trim().toLowerCase();
+  const debugTimeFactor = debugTimeUnit === 's' ? 1000 : debugTimeUnit === 'us' ? 0.001 : 1;
+  if (!['ms', 's', 'us'].includes(debugTimeUnit)) {
+    problems.push(`DEBUG_TIME_UNIT must be "ms", "s" or "us", got "${debugTimeUnit}"`);
+  }
+
   if (problems.length > 0) throw new ConfigError(problems);
 
   return {
@@ -210,6 +218,7 @@ export function parseConfig(env: Env): Config {
     userAgent: env.USER_AGENT && env.USER_AGENT.trim() ? env.USER_AGENT.trim() : DEFAULTS.userAgent,
     normalizeEndpoints: parseBool(env.ENDPOINT_NORMALIZE, true),
     debugField,
+    debugTimeFactor,
     debugSchema: env.DEBUG_SCHEMA && env.DEBUG_SCHEMA.trim() ? env.DEBUG_SCHEMA.trim() : DEFAULTS.debugSchema,
     discoverN,
     top,

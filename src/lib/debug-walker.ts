@@ -95,6 +95,12 @@ export function walkDebug(debug: unknown): Sample[] {
   return out;
 }
 
+/** Converts `time` samples to milliseconds; other kinds pass through. */
+export function scaleTimeSamples(samples: readonly Sample[], factor: number): Sample[] {
+  if (factor === 1) return [...samples];
+  return samples.map((sample) => (sample.kind === 'time' ? { ...sample, value: sample.value * factor } : sample));
+}
+
 /** Reads a dotted path (`data.debug`) from a parsed JSON value. */
 export function getByPath(value: unknown, dotted: string): unknown {
   return dotted.split('.').reduce<unknown>((acc, key) => (isDict(acc) ? acc[key] : undefined), value);

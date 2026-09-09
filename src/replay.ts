@@ -24,7 +24,7 @@ const config = parseConfig(__ENV);
 const { pool, meta } = sharedPool(config);
 const offsets = buildOffsets(poolTimestamps(pool));
 const schema = loadSchema(config);
-const requestContext = createRequestContext(config, declareDebugMetrics(schema));
+const requestContext = createRequestContext(config, declareDebugMetrics(schema, config.debugTimeFactor));
 const vus = replayVus(config, pool.length);
 
 // 4xx are legitimate replayed responses; only 5xx and transport errors count as failed.

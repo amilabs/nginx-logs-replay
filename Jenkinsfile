@@ -16,7 +16,7 @@ pipeline {
         string(name: 'DURATION', defaultValue: '60s', description: 'rate: duration (60s, 5m)')
         string(name: 'VUS', defaultValue: '50', description: 'max concurrency (replay) / pre-allocated VUs (rate)')
         booleanParam(name: 'DISCOVER', defaultValue: true, description: 'Run discover.ts first to build the debug schema (per-component metrics)')
-        string(name: 'EXTRA_ENV', defaultValue: '-e CACHE_BUSTER=cb -e QUERY_PARAMS=debugId=clickhouse', description: 'Extra k6 -e options (QUERY_PARAMS=debugId=... enables the debug block on Ethplorer-style APIs)')
+        string(name: 'EXTRA_ENV', defaultValue: '-e CACHE_BUSTER=cb -e QUERY_PARAMS=debugId=clickhouse -e DEBUG_TIME_UNIT=s', description: 'Extra k6 -e options (QUERY_PARAMS=debugId=... enables the debug block on Ethplorer-style APIs, whose times are in seconds)')
     }
     environment {
         IMAGE = "nginx-logs-replay:${env.BUILD_NUMBER}"

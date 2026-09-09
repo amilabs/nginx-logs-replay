@@ -5,6 +5,7 @@ import {
   metricCollisions,
   metricName,
   parseSchema,
+  scaleTimeSamples,
   walkDebug,
 } from '../../src/lib/debug-walker.ts';
 
@@ -48,6 +49,19 @@ describe('walkDebug', () => {
     expect(walkDebug(null)).toEqual([]);
     expect(walkDebug('x')).toEqual([]);
     expect(walkDebug([1])).toEqual([]);
+  });
+});
+
+describe('scaleTimeSamples', () => {
+  it('scales only time samples', () => {
+    const samples = walkDebug({ clickhouse: { time: 0.05, num: 2 }, memory: { usage: 10, peak: 20 } });
+    expect(scaleTimeSamples(samples, 1000)).toEqual([
+      { path: 'clickhouse', kind: 'time', value: 50 },
+      { path: 'clickhouse', kind: 'num', value: 2 },
+      { path: 'memory', kind: 'usage', value: 10 },
+      { path: 'memory', kind: 'peak', value: 20 },
+    ]);
+    expect(scaleTimeSamples(samples, 1)).toEqual(samples);
   });
 });
 

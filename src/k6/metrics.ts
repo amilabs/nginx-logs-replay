@@ -5,7 +5,7 @@
 
 import exec from 'k6/execution';
 import { Counter, Trend } from 'k6/metrics';
-import { schemaKey, walkDebug, type DebugSchema } from '../lib/debug-walker.ts';
+import { scaleTimeSamples, schemaKey, walkDebug, type DebugSchema } from '../lib/debug-walker.ts';
 
 export const replayLag = new Trend('replay_lag_ms', true);
 export const statusMismatch = new Counter('replay_status_mismatch');
@@ -15,17 +15,19 @@ export interface DebugMetrics {
   readonly byKey: ReadonlyMap<string, Trend | Counter>;
   readonly missing: Counter;
   readonly unknown: Counter;
+  /** Multiplier turning debug `time` values into milliseconds. */
+  readonly timeFactor: number;
 }
 
 /** Declares one Trend/Counter per schema entry. Must run in the init context. */
-export function declareDebugMetrics(schema: DebugSchema | null): DebugMetrics | null {
+export function declareDebugMetrics(schema: DebugSchema | null, timeFactor = 1): DebugMetrics | null {
   if (!schema) return null;
   const byKey = new Map<string, Trend | Counter>();
   for (const entry of schema.entries) {
     const metric = entry.kind === 'num' ? new Counter(entry.metric) : new Trend(entry.metric, entry.kind === 'time');
     byKey.set(schemaKey(entry.path, entry.kind), metric);
   }
-  return { schema, byKey, missing: new Counter('debug_missing'), unknown: new Counter('debug_unknown_paths') };
+  return { schema, byKey, missing: new Counter('debug_missing'), unknown: new Counter('debug_unknown_paths'), timeFactor };
 }
 
 const warnedPaths = new Set<string>();
@@ -42,7 +44,7 @@ export function recordDebug(metrics: DebugMetrics, debug: unknown, tags: Record<
     metrics.missing.add(1, tags);
     return;
   }
-  const samples = walkDebug(debug);
+  const samples = scaleTimeSamples(walkDebug(debug), metrics.timeFactor);
   if (samples.length === 0) {
     metrics.missing.add(1, tags);
     return;

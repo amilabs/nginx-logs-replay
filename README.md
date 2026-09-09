@@ -75,6 +75,7 @@ k6 run -o experimental-prometheus-rw --tag testid=eth3-$(date +%s) -e PREFIX=...
 | `USER_AGENT` | `log` | replay the UA from the log, or a literal string |
 | `ENDPOINT_NORMALIZE` | `true` | group `/x/0xabc…` as `/x/:hex` (also `:n`, `:uuid`, `:hash`) |
 | `DEBUG_FIELD` | `debug` | dotted path to the debug object in the JSON body |
+| `DEBUG_TIME_UNIT` | `ms` | unit of `time` values in the debug block: `ms`, `s` or `us` (reported in ms) |
 | `DEBUG_SCHEMA` | `./debug-schema.json` | schema from `discover.ts`; missing file = no component metrics; `none` disables |
 | `DISCOVER_N` | `5` | discover: how many requests to probe |
 | `TOP` | `15` | endpoints shown in the summary |

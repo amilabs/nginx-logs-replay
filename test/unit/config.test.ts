@@ -17,6 +17,11 @@ describe('parseConfig', () => {
     expect(cfg.auth).toBeNull();
     expect(cfg.colors).toBe(true);
     expect(cfg.normalizeEndpoints).toBe(true);
+    expect(cfg.debugTimeFactor).toBe(1);
+  });
+
+  it('rejects an unknown DEBUG_TIME_UNIT', () => {
+    expect(() => parseConfig({ ...base, DEBUG_TIME_UNIT: 'minutes' })).toThrow(/DEBUG_TIME_UNIT/);
   });
 
   it('parses every option', () => {
@@ -40,6 +45,7 @@ describe('parseConfig', () => {
       USER_AGENT: 'bench/1',
       ENDPOINT_NORMALIZE: 'false',
       DEBUG_FIELD: 'data.debug',
+      DEBUG_TIME_UNIT: 's',
       DEBUG_SCHEMA: './schema.json',
       TOP: '3',
       SUMMARY_JSON: 'out.json',
@@ -67,6 +73,7 @@ describe('parseConfig', () => {
     expect(cfg.userAgent).toBe('bench/1');
     expect(cfg.normalizeEndpoints).toBe(false);
     expect(cfg.debugField).toBe('data.debug');
+    expect(cfg.debugTimeFactor).toBe(1000);
     expect(cfg.debugSchema).toBe('./schema.json');
     expect(cfg.top).toBe(3);
     expect(cfg.summaryJson).toBe('out.json');

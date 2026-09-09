@@ -10,7 +10,7 @@
 
 import type { Options } from 'k6/options';
 import { parseConfig } from './lib/config.ts';
-import { discoverSchema, walkDebug, type DebugSchema, type Sample } from './lib/debug-walker.ts';
+import { discoverSchema, scaleTimeSamples, walkDebug, type DebugSchema, type Sample } from './lib/debug-walker.ts';
 import { fmtNum, palette, table } from './lib/format.ts';
 import { sharedPool } from './k6/pool.ts';
 import { createRequestContext, extractDebug, performRequest } from './k6/request.ts';
@@ -40,7 +40,7 @@ export function setup(): Discovery {
     if (!entry) continue;
     const res = performRequest(requestContext, entry, `discover-${i}`);
     const debug = extractDebug(res, config.debugField);
-    probes.push({ path: entry.p, status: res.status, samples: walkDebug(debug) });
+    probes.push({ path: entry.p, status: res.status, samples: scaleTimeSamples(walkDebug(debug), config.debugTimeFactor) });
   }
   return { schema: discoverSchema(config.debugField, probes.map((p) => p.samples)), probes };
 }
@@ -78,7 +78,7 @@ export function handleSummary(data: SummaryData): Record<string, string> {
   }
   lines.push(
     table(
-      ['path', 'kind', 'metric', 'example'],
+      ['path', 'kind', 'metric', 'example (time in ms)'],
       schema.entries.map((e) => [e.path, e.kind, e.metric, fmtNum(firstValues.get(`${e.path}#${e.kind}`))]),
       ['left', 'left', 'left', 'right'],
     ),
