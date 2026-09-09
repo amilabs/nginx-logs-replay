@@ -140,12 +140,14 @@ describe('buildReport', () => {
       plannedMs: 60_000,
     });
     expect(report.http.dropped).toBe(12_883);
-    expect(report.http.suggestedVus).toBe(36);
+    expect(report.http.suggestedVus).toBe(54);
     const text = renderReport(report, 15, false);
     expect(text).toContain('Timeline not kept: requests fired late by p50 50.00s, p95 92.12s, max 96.73s because all 5 VUs were busy');
     expect(text).toContain('12883 requests were never sent');
     expect(text).toContain('load generator itself was the limit');
-    expect(text).toContain('set VUS to about 36');
+    expect(text).toContain('set VUS to about 54');
+    const tail = buildReport({ ...slow, metrics: { ...slow.metrics, replay_lag_ms: trend(800, 7137, 12795, 19058, 0) } }, { ...ctx, vus: { preAllocatedVUs: 176, maxVUs: 704, auto: true, assumedLatencyMs: 250 }, targetRps: 352, plannedMs: 180_000 });
+    expect(renderReport(tail, 15, false)).toContain('Timeline kept for most requests (p50 lag 0.00ms) but a tail fired late: p90 7.14s, p95 7.14s, max 19.06s, because all 176 VUs were busy during bursts');
     const saturated = buildReport({ ...slow, metrics: { ...slow.metrics, http_req_duration: trend(1200, 5227, 9000, 18047, 40) } }, { ...ctx, vus: { preAllocatedVUs: 227, maxVUs: 900, auto: true, assumedLatencyMs: 250 }, targetRps: 453, plannedMs: 120_000, probeAvgMs: 83.6 });
     expect(renderReport(saturated, 15, false)).toContain('Responses were slow under load (p95 5.23s, max 18.05s vs 83.6ms during discover): the target saturated');
     expect(buildReport(data, ctx).http).toMatchObject({ dropped: 0, suggestedVus: null });

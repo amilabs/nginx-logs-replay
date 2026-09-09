@@ -92,6 +92,7 @@ export interface HttpSection {
   readonly dataSent: number;
   readonly avgBodyBytes: number;
   readonly lagP50: number | null;
+  readonly lagP90: number | null;
   readonly lagP95: number | null;
   readonly lagMax: number | null;
   /** Iterations k6 never started (replay hit max duration / rate mode had no free VU). */
@@ -203,12 +204,14 @@ function buildHttp(data: K6SummaryData, header: HeaderSection): HttpSection {
   const lagP95 = metricValue(data, 'replay_lag_ms', 'p(95)');
   const dataReceived = num(metricValue(data, 'data_received', 'count'));
   const dropped = num(metricValue(data, 'dropped_iterations', 'count'));
-  const iterationAvgMs = num(metricValue(data, 'iteration_duration', 'avg'));
+  // Sizing latency: what a VU is busy for during the bad moments (p95), never below twice the average.
+  const duration = percentiles(data, 'http_req_duration') ?? EMPTY;
+  const sizingLatencyMs = Math.max(duration.avg * 2, duration.p95);
   // Replay: compare with the average rate of the plan; rate mode: with the configured rps.
   const expectedRps = header.plannedMs && header.plannedMs > 0 ? (header.poolKept * 1000) / header.plannedMs : header.targetRps;
   const behind = (lagP95 !== null && lagP95 > 1000) || dropped > 0 || (expectedRps > 0 && header.achievedRps < expectedRps * 0.9);
   const suggestedVus =
-    behind && header.targetRps > 0 && iterationAvgMs > 0 ? Math.ceil((header.targetRps * iterationAvgMs * 1.5) / 1000) : null;
+    behind && header.targetRps > 0 && sizingLatencyMs > 0 ? Math.ceil((header.targetRps * sizingLatencyMs * 1.2) / 1000) : null;
   return {
     count,
     failedRate,
@@ -223,6 +226,7 @@ function buildHttp(data: K6SummaryData, header: HeaderSection): HttpSection {
     dataSent: num(metricValue(data, 'data_sent', 'count')),
     avgBodyBytes: count > 0 ? dataReceived / count : 0,
     lagP50: lagP95 === null ? null : metricValue(data, 'replay_lag_ms', 'med'),
+    lagP90: lagP95 === null ? null : metricValue(data, 'replay_lag_ms', 'p(90)'),
     lagP95,
     lagMax: lagP95 === null ? null : metricValue(data, 'replay_lag_ms', 'max'),
     dropped,
@@ -351,8 +355,11 @@ export function capacityWarning(report: Report): string | null {
   if (!late && s.dropped === 0 && s.suggestedVus === null) return null;
   const facts: string[] = [];
   if (late) {
+    const mostlyKept = (s.lagP50 ?? 0) < 100;
     facts.push(
-      `Timeline not kept: requests fired late by p50 ${fmtMs(s.lagP50)}, p95 ${fmtMs(s.lagP95)}, max ${fmtMs(s.lagMax)} because all ${h.vus} VUs were busy`,
+      mostlyKept
+        ? `Timeline kept for most requests (p50 lag ${fmtMs(s.lagP50)}) but a tail fired late: p90 ${fmtMs(s.lagP90)}, p95 ${fmtMs(s.lagP95)}, max ${fmtMs(s.lagMax)}, because all ${h.vus} VUs were busy during bursts`
+        : `Timeline not kept: requests fired late by p50 ${fmtMs(s.lagP50)}, p95 ${fmtMs(s.lagP95)}, max ${fmtMs(s.lagMax)} because all ${h.vus} VUs were busy`,
     );
   }
   if (s.dropped > 0) facts.push(`${s.dropped} requests were never sent (no free VU / max duration reached)`);
