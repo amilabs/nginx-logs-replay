@@ -116,7 +116,7 @@ async function main() {
     const rate = JSON.parse(readFileSync(summaryPath, 'utf8'));
     assert.ok(rate.report.http.count >= 30 && rate.report.http.count <= 45, `rate mode sent ~40 requests, got ${rate.report.http.count}`);
     assert.equal(rate.report.http.lagP95, null, 'no lag metric in rate mode');
-    assert.ok(rate.report.header.vusAuto === true && rate.report.header.vus === 10 && rate.report.header.maxVus === 200, 'rate mode auto VUs');
+    assert.ok(rate.report.header.vusAuto === true && rate.report.header.vus === 20 && rate.report.header.maxVus === 200, 'rate mode auto VUs');
     assert.ok(rate.report.components.length > 0);
     assert.ok(rate.report.capacity.rows.length === 1 && rate.report.capacity.verdict.includes('RPS='), 'rate verdict present');
 
