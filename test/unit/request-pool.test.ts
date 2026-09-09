@@ -53,7 +53,8 @@ describe('endpointOf / setQueryParams', () => {
   it('endpointTag normalizes ids when enabled', () => {
     const hex = `0x${'ab'.repeat(20)}`;
     expect(endpointTag(`/getAddressInfo/${hex}?apiKey=k`, true)).toBe('/getAddressInfo/:hex');
-    expect(endpointTag(`/tx/${'f'.repeat(64)}`, true)).toBe('/tx/:hex'.replace(':hex', ':hash'));
+    expect(endpointTag(`/tx/${'f'.repeat(64)}`, true)).toBe('/tx/:hash');
+    expect(endpointTag('/getAddressInfo/0X3F5CE5FBFE3E9AF3971DD833D26BA9B5C936F0BE', true)).toBe('/getAddressInfo/:hex');
     expect(endpointTag('/block/12345/txs', true)).toBe('/block/:n/txs');
     expect(endpointTag('/u/123e4567-e89b-12d3-a456-426614174000', true)).toBe('/u/:uuid');
     expect(endpointTag('/service/service.php?data=0xabc', true)).toBe('/service/service.php');

@@ -80,7 +80,7 @@ export function endpointOf(path: string): string {
   return cut === -1 ? path : path.slice(0, cut);
 }
 
-const HEX_SEGMENT_RE = /^0x[0-9a-fA-F]{6,}$/;
+const HEX_SEGMENT_RE = /^0[xX][0-9a-fA-F]{6,}$/;
 const HASH_SEGMENT_RE = /^[0-9a-fA-F]{32,}$/;
 const NUMBER_SEGMENT_RE = /^\d+$/;
 const UUID_SEGMENT_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
