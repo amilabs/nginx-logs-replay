@@ -44,7 +44,7 @@ table.kv td { text-align: left; }
 .note { background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 8px 12px; margin: 8px 0; }
 .verdict { border-radius: 8px; padding: 12px 14px; margin: 8px 0 16px; font-size: 15px; }
 .verdict.good { background: #ecfdf5; border: 1px solid #a7f3d0; }
-.verdict.knee { background: #fff7ed; border: 1px solid #fed7aa; }
+.verdict.knee { background: #eff6ff; border: 1px solid #bfdbfe; }
 .verdict b { display: block; margin-bottom: 4px; }
 .two { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 @media (max-width: 900px) { .two { grid-template-columns: 1fr; } }
@@ -158,8 +158,8 @@ function renderCapacity(cap: CapacitySection): string {
   const cls = cap.degradedFromRps === null ? 'good' : 'knee';
   const headline =
     cap.nextRatio !== null
-      ? `Next run: RATIO=${cap.nextRatio}${cap.safeRatio !== null && cap.degradedFromRps !== null ? ` (highest RATIO without degradation seen here: x${cap.safeRatio})` : ''}`
-      : 'Next run';
+      ? `Suggested next run: RATIO=${cap.nextRatio}${cap.safeRatio !== null && cap.degradedFromRps !== null ? ` (estimated no-degradation level: x${cap.safeRatio})` : ''}`
+      : 'Suggested next run';
   const verdict = `<div class="verdict ${cls}"><b>${escapeHtml(headline)}</b>${escapeHtml(cap.verdict)}</div>`;
   if (cap.rows.length === 0) return `<h2>Load vs latency</h2>${verdict}`;
   const bars: BarRow[] = cap.rows.map((r) => ({
@@ -172,12 +172,12 @@ function renderCapacity(cap: CapacitySection): string {
   const table = cap.rows
     .map(
       (r) =>
-        `<tr><td>≤ ${r.upToRps}</td><td>${r.count}</td><td class="${r.failedRate > 0.01 ? 'bad' : ''}">${fmtPct(r.failedRate)}</td>${pctCells(r.duration)}<td class="${cap.degradedFromRps !== null && r.upToRps >= cap.degradedFromRps ? 'bad' : 'ok'}">${cap.degradedFromRps !== null && r.upToRps >= cap.degradedFromRps ? 'degraded' : 'ok'}</td></tr>`,
+        `<tr><td>≤ ${r.upToRps}</td><td>${r.count}</td><td class="${r.failedRate > 0.01 ? 'bad' : ''}">${fmtPct(r.failedRate)}</td>${pctCells(r.duration)}<td class="${cap.degradedFromRps !== null && r.upToRps >= cap.degradedFromRps ? 'bad' : 'ok'}">${cap.degradedFromRps !== null && r.upToRps >= cap.degradedFromRps ? 'climbing' : 'flat'}</td></tr>`,
     )
     .join('\n');
-  return `<h2>Load vs latency <small>(offered rps in the second each request was due → its latency; degraded = p95 above 2× the low-load p95 or &gt;1% failed)</small></h2>
+  return `<h2>Load vs latency <small>(offered rps in the second each request was due → its latency; a bucket counts with ≥100 requests and ≥2% of the run; "climbing" = p95 above 2× the low-load p95 + 200ms, or &gt;1% failed)</small></h2>
 ${verdict}
-<div class="legend"><i style="background:#60a5fa"></i>p95 <i style="background:#1d4ed8"></i>p50 <i style="background:#ef4444"></i>degraded</div>
+<div class="legend"><i style="background:#60a5fa"></i>p95 <i style="background:#1d4ed8"></i>p50 <i style="background:#ef4444"></i>latency climbing</div>
 ${barChart(bars, { labelWidth: 170 })}
 <table><thead><tr><th>offered load</th><th>requests</th><th>failed</th>${pctHeaderCells()}<th></th></tr></thead><tbody>
 ${table}

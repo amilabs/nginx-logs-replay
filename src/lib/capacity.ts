@@ -57,14 +57,20 @@ export interface CapacityAnalysis {
   readonly degradedFromRps: number | null;
 }
 
-const MIN_SAMPLES = 20;
+/** A bucket takes part in the analysis only with at least this many requests and 2% of the run. */
+const MIN_SAMPLES_ABS = 100;
+const MIN_SAMPLES_SHARE = 0.02;
+
+export function minSamples(totalRequests: number): number {
+  return Math.max(MIN_SAMPLES_ABS, Math.round(totalRequests * MIN_SAMPLES_SHARE));
+}
 /** The reference p95 may not exceed this multiple of the discover probe latency. */
 const PROBE_REFERENCE_FACTOR = 3;
 const DEGRADATION_FACTOR = 2;
-const DEGRADATION_SLACK_MS = 50;
+const DEGRADATION_SLACK_MS = 200;
 const FAIL_LIMIT = 0.01;
 
-/** A bucket is degraded when its p95 doubles the reference (plus slack) or it fails. */
+/** A bucket is degraded when its p95 exceeds twice the reference plus 200ms, or more than 1% of it fails. */
 export function isDegraded(row: LoadRow, referenceP95: number): boolean {
   return row.failedRate > FAIL_LIMIT || row.duration.p95 > referenceP95 * DEGRADATION_FACTOR + DEGRADATION_SLACK_MS;
 }
@@ -77,7 +83,8 @@ export function isDegraded(row: LoadRow, referenceP95: number): boolean {
  */
 export function analyzeCapacity(rows: readonly LoadRow[], probeAvgMs: number | null = null): CapacityAnalysis {
   const sorted = [...rows].sort((a, b) => a.upToRps - b.upToRps);
-  const populated = sorted.filter((r) => r.count >= MIN_SAMPLES);
+  const threshold = minSamples(sorted.reduce((sum, r) => sum + r.count, 0));
+  const populated = sorted.filter((r) => r.count >= threshold);
   const candidates = populated.length > 0 ? populated : sorted;
   if (candidates.length === 0) return { rows: sorted, referenceP95: null, healthyUpToRps: null, degradedFromRps: null };
   const bestP95 = Math.min(...candidates.map((r) => r.duration.p95));
@@ -85,7 +92,7 @@ export function analyzeCapacity(rows: readonly LoadRow[], probeAvgMs: number | n
   let healthy: number | null = null;
   let degradedFrom: number | null = null;
   for (const row of sorted) {
-    if (row.count < MIN_SAMPLES && populated.length > 0) continue;
+    if (row.count < threshold && populated.length > 0) continue;
     if (isDegraded(row, referenceP95)) {
       degradedFrom = row.upToRps;
       break;
@@ -148,7 +155,7 @@ export function recommendRatio(analysis: CapacityAnalysis, ratio: number, origin
   if (analysis.degradedFromRps === null) {
     const next = round1(ratio * 1.5);
     return {
-      verdict: `No degradation up to the busiest second of this run (p95 stayed within 2× the ${ref}ms reference). Try RATIO=${next} to look for the limit.`,
+      verdict: `No degradation up to the busiest second of this run (p95 stayed within 2× the ${ref}ms reference). Suggested next run: RATIO=${next} to look for the limit.`,
       nextRatio: next,
       safeRatio: ratio,
       saturated,
@@ -157,25 +164,25 @@ export function recommendRatio(analysis: CapacityAnalysis, ratio: number, origin
   if (analysis.healthyUpToRps === null) {
     const next = round1(Math.max(0.1, ratio / 2));
     return {
-      verdict: `Latency was degraded even at the lowest load of this run (from ${analysis.degradedFromRps} rps, p95 > 2× the ${ref}ms reference). Try RATIO=${next}.`,
+      verdict: `Latency was already elevated at the lowest well-populated load of this run (≤ ${analysis.degradedFromRps} rps, p95 > 2× the ${ref}ms reference). Suggested next run: RATIO=${next}.`,
       nextRatio: next,
       safeRatio: null,
       saturated,
     };
   }
   const safe = round1(Math.max(0.1, analysis.healthyUpToRps / originalPeakRps));
-  const knee = `Healthy up to ~${analysis.healthyUpToRps} rps, degraded from ~${analysis.degradedFromRps} rps (p95 > 2× the ${ref}ms reference). The log peaks at ${round1(originalPeakRps)} rps, so that is RATIO x${safe}.`;
+  const knee = `Latency stays flat up to ~${analysis.healthyUpToRps} rps and starts to climb around ~${analysis.degradedFromRps} rps (p95 > 2× the ${ref}ms reference). The log peaks at ${round1(originalPeakRps)} rps, so the estimated no-degradation level is RATIO x${safe}.`;
   if (saturated) {
     const next = round1(Math.max(safe, ratio * 0.6));
     return {
-      verdict: `${knee} This run was over the limit as a whole (requests fired late or were dropped), so quiet seconds still carried backlog and x${safe} is a lower bound. Next run: RATIO=${next}.`,
+      verdict: `${knee} This run was over the limit as a whole (requests fired late or were dropped), so quiet seconds still carried backlog and x${safe} is a lower bound. Suggested next run: RATIO=${next}.`,
       nextRatio: next,
       safeRatio: safe,
       saturated,
     };
   }
   return {
-    verdict: `${knee} Next run: RATIO=${safe} to confirm.`,
+    verdict: `${knee} Suggested next run: RATIO=${safe} to confirm.`,
     nextRatio: safe,
     safeRatio: safe,
     saturated,

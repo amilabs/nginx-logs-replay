@@ -472,11 +472,11 @@ function renderCapacity(cap: CapacitySection, colors: boolean): string {
       fmtMs(r.duration.p95),
       fmtMs(r.duration.p99),
       fmtMs(r.duration.max),
-      cap.degradedFromRps !== null && r.upToRps >= cap.degradedFromRps ? c.red('degraded') : c.green('ok'),
+      cap.degradedFromRps !== null && r.upToRps >= cap.degradedFromRps ? c.yellow('climbing') : c.green('flat'),
     ]),
     ['right', 'right', 'right', 'right', 'right', 'right', 'right', 'left'],
   );
-  const verdict = cap.degradedFromRps === null ? c.green(cap.verdict) : c.yellow(cap.verdict);
+  const verdict = cap.degradedFromRps === null ? c.green(cap.verdict) : c.cyan(cap.verdict);
   return [title, body, verdict].join('\n');
 }
 

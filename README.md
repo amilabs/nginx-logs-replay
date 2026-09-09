@@ -112,13 +112,17 @@ only 5xx and transport errors count as failed.
 
 Every replayed request is tagged with the load it was fired at (requests due in
 the same wall-clock second, on the compressed timeline). The summary groups
-latency by that load in 8 buckets up to the busiest second and marks a bucket
-as degraded when its p95 exceeds twice the p95 of the lowest bucket (+50ms)
-or more than 1% of its requests failed. The last healthy bucket is the knee;
-divided by the log's own peak rps it becomes the highest `RATIO` without
-degradation, printed as `Next run: RATIO=…`. When nothing degrades the
-report suggests `RATIO × 1.5`. Rate mode compares the run with the discover
-probe latency and suggests the next `RPS` instead.
+latency by that load in 8 buckets up to the busiest second; a bucket takes
+part only with at least 100 requests and 2% of the run. The reference is the
+best p95 among those buckets (capped at 3× the discover probe latency); a
+bucket is "climbing" when its p95 exceeds twice the reference + 200ms or more
+than 1% of its requests failed. The last flat bucket divided by the log's own
+peak rps is the estimated no-degradation `RATIO`, printed as
+`Suggested next run: RATIO=…`. When nothing climbs the report suggests
+`RATIO × 1.5`; when the whole run was over the limit (timeline lag, drops)
+the estimate is a lower bound and the suggestion is a 0.6× step down. Rate
+mode compares the run with the discover probe latency and suggests the next
+`RPS` instead.
 
 ## Component metrics (the "who is slow" table)
 
