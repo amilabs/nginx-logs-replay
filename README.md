@@ -164,8 +164,14 @@ See `CLAUDE.md` for the code layout and rules.
 
 ## Jenkins
 
-`Jenkinsfile` runs the Docker image: upload a log (plain or `.gz`; empty =
-smoke run on `examples/access.log`), set `PREFIX`, `LOAD`, `VUS`, extra `-e`
-options in `EXTRA_ENV`. `LOAD` is one field for both modes: `x1` / `x2` /
-`0.5` replay the log at that speed, `50rps` or `50rps for 5m` fire a fixed
-rate. Artifacts: `summary.json`, `report.html`, `debug-schema.json`.
+One `Jenkinsfile` serves two jobs whose parameters are defined in the devops
+job DSL (`terraform/modules/jenkins/jobs/root/scripts/`):
+
+- `scripts/nginx-logs-replay` — log timeline, parameter `RATIO`;
+- `scripts/nginx-logs-rate` — fixed rate, parameters `RPS` and `DURATION`.
+
+Both take `FILE` (log upload, plain or `.gz`; empty = smoke run on
+`examples/access.log`), `PREFIX`, `VUS`, `QUERY_PARAMS` (default
+`debugId=clickhouse&noJokes=please`) and extra `-e` options in `EXTRA_ENV`.
+The cache buster and `DEBUG_TIME_UNIT=s` are always on. The pipeline builds the Docker image, runs `discover.ts`, then
+`replay.ts`, and archives `summary.json`, `report.html`, `debug-schema.json`.
