@@ -55,7 +55,8 @@ async function main() {
   const prefix = `http://127.0.0.1:${port}`;
   const schemaPath = path.join(work, 'debug-schema.json');
   const summaryPath = path.join(work, 'summary.json');
-  const common = { PREFIX: prefix, LOG, DEBUG_SCHEMA: schemaPath, SUMMARY_JSON: summaryPath, NO_COLOR: '1' };
+  const htmlPath = path.join(work, 'summary.html');
+  const common = { PREFIX: prefix, LOG, DEBUG_SCHEMA: schemaPath, SUMMARY_JSON: summaryPath, SUMMARY_HTML: htmlPath, NO_COLOR: '1' };
   try {
     console.log('e2e: discover');
     runK6(k6, path.join(root, 'src', 'discover.ts'), { ...common, DISCOVER_N: '3' }, root);
@@ -79,13 +80,19 @@ async function main() {
     assert.equal(replay.report.debug.missing, 3, '/fail, /nodebug and /html have no debug block');
     assert.equal(replay.report.debug.unknownPaths, 0);
     const byPath = Object.fromEntries(replay.report.components.map((r) => [r.path, r]));
-    assert.ok(byPath.clickhouse.p95 > 0 && byPath.clickhouse.num === 17, 'clickhouse row aggregated');
+    assert.ok(byPath.clickhouse.time.p95 > 0 && byPath.clickhouse.num === 17, 'clickhouse row aggregated');
     assert.ok(byPath['mongo.read'].num === 34, 'mongo num summed');
     assert.equal(replay.report.components[0].path, 'totalTime', 'totalTime is the slowest "component"');
     assert.ok(replay.report.endpoints.length >= 5, 'per-endpoint rows present');
     const slow = replay.report.endpoints.find((e) => e.endpoint === '/slow');
-    assert.ok(slow && slow.count === 2 && slow.p50 >= 200, '/slow endpoint measured');
+    assert.ok(slow && slow.count === 2 && slow.duration.p50 >= 200 && slow.rps > 0, '/slow endpoint measured');
+    const nodebug = replay.report.endpoints.find((e) => e.endpoint === '/nodebug');
+    assert.ok(nodebug && nodebug.mismatches === 1, 'per-endpoint mismatch counted');
+    assert.ok(replay.report.http.dataReceived > 0 && replay.report.http.ttfb.p95 > 0, 'traffic and ttfb present');
+    assert.ok(replay.report.header.logFrom.startsWith('2026-09-10T12:00:00'), 'log window present');
     assert.ok(replay.report.http.lagP95 !== null && replay.report.http.lagP95 < 500, 'schedule lag is small');
+    const html = readFileSync(htmlPath, 'utf8');
+    assert.ok(html.startsWith('<!DOCTYPE html>') && html.includes('<svg') && html.includes('clickhouse') && html.includes('/slow'), 'HTML report written');
     const received = (await stats(port)).received.slice(before);
     assert.equal(received.length, POOL_SIZE);
     assert.ok(received.every((r) => r.url.includes('cb=')), 'cache buster on every request');

@@ -39,6 +39,10 @@ export interface Config {
   readonly discoverN: number;
   readonly top: number;
   readonly summaryJson: string;
+  /** HTML report path; empty string disables it. */
+  readonly summaryHtml: string;
+  /** Relative link to the k6 dashboard export shown in the HTML report (empty = none). */
+  readonly dashboardHref: string;
   readonly colors: boolean;
 }
 
@@ -61,6 +65,7 @@ export const DEFAULTS = {
   discoverN: 5,
   top: 15,
   summaryJson: './summary.json',
+  summaryHtml: './summary.html',
 } as const;
 
 const DURATION_RE = /^(\d+)(ms|s|m|h)$/;
@@ -101,6 +106,18 @@ export function parseQueryParams(value: string | undefined): [string, string][] 
       const eq = pair.indexOf('=');
       return eq === -1 ? [pair, ''] : [pair.slice(0, eq), pair.slice(eq + 1)];
     });
+}
+
+/**
+ * k6 resolves relative paths in open()/handleSummary against the script's
+ * directory, not the shell's. Anchor them to $PWD (exported by every shell and
+ * part of k6's __ENV) so `-e LOG=./access.log` means what the user expects.
+ */
+export function resolvePath(value: string, pwd: string | undefined): string {
+  if (!value || value === 'none' || value.startsWith('/') || /^[A-Za-z]:[\\/]/.test(value)) return value;
+  if (!pwd) return value;
+  const base = pwd.replace(/\/+$/, '');
+  return `${base}/${value.replace(/^\.\//, '')}`;
 }
 
 function parseBool(value: string | undefined, fallback: boolean): boolean {
@@ -195,9 +212,13 @@ export function parseConfig(env: Env): Config {
 
   if (problems.length > 0) throw new ConfigError(problems);
 
+  const pwd = env.PWD;
+  const path = (raw: string | undefined, fallback: string): string =>
+    resolvePath(raw !== undefined && raw.trim() ? raw.trim() : fallback, pwd);
+
   return {
     prefix,
-    log: env.LOG && env.LOG.trim() ? env.LOG.trim() : DEFAULTS.log,
+    log: path(env.LOG, DEFAULTS.log),
     mode,
     ratio,
     rps,
@@ -219,10 +240,12 @@ export function parseConfig(env: Env): Config {
     normalizeEndpoints: parseBool(env.ENDPOINT_NORMALIZE, true),
     debugField,
     debugTimeFactor,
-    debugSchema: env.DEBUG_SCHEMA && env.DEBUG_SCHEMA.trim() ? env.DEBUG_SCHEMA.trim() : DEFAULTS.debugSchema,
+    debugSchema: path(env.DEBUG_SCHEMA, DEFAULTS.debugSchema),
     discoverN,
     top,
-    summaryJson: env.SUMMARY_JSON && env.SUMMARY_JSON.trim() ? env.SUMMARY_JSON.trim() : DEFAULTS.summaryJson,
+    summaryJson: path(env.SUMMARY_JSON, DEFAULTS.summaryJson),
+    summaryHtml: env.SUMMARY_HTML === undefined ? resolvePath(DEFAULTS.summaryHtml, pwd) : resolvePath(env.SUMMARY_HTML.trim(), pwd),
+    dashboardHref: (env.DASHBOARD_HREF ?? '').trim(),
     colors: !parseBool(env.NO_COLOR, false),
   };
 }

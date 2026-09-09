@@ -39,8 +39,8 @@ describe('buildPool', () => {
 describe('poolStats', () => {
   it('computes span and original rps', () => {
     const pool = buildPool([entry('/a', 0), entry('/b', 1000), entry('/c', 4000)], noFilter);
-    expect(poolStats(5, pool)).toEqual({ total: 5, kept: 3, spanMs: 4000, originalRps: 0.75 });
-    expect(poolStats(0, [])).toEqual({ total: 0, kept: 0, spanMs: 0, originalRps: 0 });
+    expect(poolStats(5, pool)).toEqual({ total: 5, kept: 3, spanMs: 4000, originalRps: 0.75, firstTs: 0, lastTs: 4000 });
+    expect(poolStats(0, [])).toEqual({ total: 0, kept: 0, spanMs: 0, originalRps: 0, firstTs: 0, lastTs: 0 });
   });
 });
 

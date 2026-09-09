@@ -68,6 +68,15 @@ export function fmtPct(ratio: number | undefined | null): string {
   return `${(ratio * 100).toFixed(2)}%`;
 }
 
+/** Bytes as `512 B` / `1.5 KB` / `2.3 MB`. */
+export function fmtBytes(value: number | undefined | null): string {
+  if (value === undefined || value === null || !Number.isFinite(value)) return '-';
+  if (value < 1024) return `${Math.round(value)} B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+  if (value < 1024 * 1024 * 1024) return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(value / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
 /** Duration in ms as `1h 02m 03s` / `45.2s` / `850ms`. */
 export function fmtDuration(ms: number): string {
   if (!Number.isFinite(ms) || ms < 0) return '-';

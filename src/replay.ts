@@ -15,6 +15,7 @@ import { parseConfig } from './lib/config.ts';
 import { buildOptions, replayVus } from './lib/options.ts';
 import { topEndpoints } from './lib/request-pool.ts';
 import { buildOffsets, poolIndex, targetTime } from './lib/schedule.ts';
+import { renderHtmlReport } from './lib/html-report.ts';
 import { buildReport, renderReport, type K6SummaryData } from './lib/summary.ts';
 import { declareDebugMetrics, replayLag } from './k6/metrics.ts';
 import { loadSchema, poolTimestamps, sharedPool } from './k6/pool.ts';
@@ -84,8 +85,14 @@ export function handleSummary(data: K6SummaryData): Record<string, string> {
     malformed: meta.malformed,
     vus: config.mode === 'replay' ? vus : config.vus,
   });
-  return {
+  const outputs: Record<string, string> = {
     stdout: renderReport(report, config.top, config.colors),
     [config.summaryJson]: JSON.stringify({ report, k6: data }, null, 2),
   };
+  if (config.summaryHtml) {
+    outputs[config.summaryHtml] = renderHtmlReport(report, config.top, {
+      dashboardHref: config.dashboardHref || undefined,
+    });
+  }
+  return outputs;
 }

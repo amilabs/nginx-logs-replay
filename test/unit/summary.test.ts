@@ -3,22 +3,29 @@ import { parseConfig } from '../../src/lib/config.ts';
 import { discoverSchema, walkDebug } from '../../src/lib/debug-walker.ts';
 import { buildReport, renderReport, type K6SummaryData } from '../../src/lib/summary.ts';
 
-const trend = (avg: number, p95: number, p99: number, max: number, med = avg) => ({
+export const trend = (avg: number, p95: number, p99: number, max: number, med = avg) => ({
   type: 'trend' as const,
   contains: 'time',
-  values: { avg, min: 0, med, 'p(90)': p95, 'p(95)': p95, 'p(99)': p99, max },
+  values: { avg, min: 1, med, 'p(75)': (med + p95) / 2, 'p(90)': p95, 'p(95)': p95, 'p(99)': p99, 'p(99.9)': max, max },
 });
-const counter = (count: number, rate = 0) => ({ type: 'counter' as const, contains: 'default', values: { count, rate } });
-const rate = (value: number) => ({ type: 'rate' as const, contains: 'default', values: { rate: value, passes: 0, fails: 0 } });
+export const counter = (count: number, rate = 0) => ({ type: 'counter' as const, contains: 'default', values: { count, rate } });
+export const rateMetric = (value: number, passes = 0) => ({ type: 'rate' as const, contains: 'default', values: { rate: value, passes, fails: 0 } });
 
-const schema = discoverSchema('debug', [walkDebug({ mongo: { read: { time: 1, num: 1 } }, clickhouse: { time: 1, num: 1 }, memory: { usage: 1, peak: 2 } })]);
+export const schema = discoverSchema('debug', [
+  walkDebug({ mongo: { read: { time: 1, num: 1 } }, clickhouse: { time: 1, num: 1 }, memory: { usage: 1, peak: 2 } }),
+]);
 
-const data: K6SummaryData = {
+export const data: K6SummaryData = {
   state: { testRunDurationMs: 12_000 },
   metrics: {
     http_reqs: counter(120, 10),
     http_req_duration: trend(50, 120, 300, 900, 40),
-    http_req_failed: rate(0.05),
+    http_req_waiting: trend(45, 110, 280, 880, 36),
+    http_req_connecting: trend(2, 3, 4, 5),
+    http_req_tls_handshaking: trend(8, 9, 10, 11),
+    http_req_failed: rateMetric(0.05, 6),
+    data_received: counter(240_000),
+    data_sent: counter(12_000),
     replay_status_mismatch: counter(3),
     replay_lag_ms: trend(5, 20, 40, 60),
     debug_missing: counter(2),
@@ -31,51 +38,61 @@ const data: K6SummaryData = {
     dbg_memory_peak: trend(200, 250, 260, 300),
     'http_reqs{endpoint:/a}': counter(100),
     'http_req_duration{endpoint:/a}': trend(40, 100, 250, 900, 35),
-    'http_req_failed{endpoint:/a}': rate(0.01),
+    'http_req_failed{endpoint:/a}': rateMetric(0.01),
+    'replay_status_mismatch{endpoint:/a}': counter(3),
     'http_reqs{endpoint:/b}': counter(20),
     'http_req_duration{endpoint:/b}': trend(80, 200, 300, 400, 70),
-    'http_req_failed{endpoint:/b}': rate(0.25),
+    'http_req_failed{endpoint:/b}': rateMetric(0.25),
     'http_reqs{endpoint:/never}': counter(0),
   },
 };
 
-const ctx = {
+export const ctx = {
   config: parseConfig({ PREFIX: 'http://h', RATIO: '2', VUS: '10' }),
   schema,
-  pool: { total: 130, kept: 120, spanMs: 24_000, originalRps: 5 },
+  pool: { total: 130, kept: 120, spanMs: 24_000, originalRps: 5, firstTs: Date.UTC(2026, 8, 10, 12, 0, 0), lastTs: Date.UTC(2026, 8, 10, 12, 0, 24) },
   malformed: 4,
+  finishedAt: new Date(Date.UTC(2026, 8, 11, 8, 0, 12)),
 };
 
 describe('buildReport', () => {
   const report = buildReport(data, ctx);
 
-  it('fills the header', () => {
+  it('fills the header with run and log windows', () => {
     expect(report.header).toMatchObject({
       mode: 'replay',
       prefix: 'http://h',
+      startedAt: '2026-09-11T08:00:00.000Z',
+      finishedAt: '2026-09-11T08:00:12.000Z',
+      testDurationMs: 12_000,
       poolTotal: 130,
       poolKept: 120,
       malformed: 4,
+      logFrom: '2026-09-10T12:00:00.000Z',
+      logTo: '2026-09-10T12:00:24.000Z',
       spanMs: 24_000,
       originalRps: 5,
+      targetRps: 10,
+      achievedRps: 10,
       ratio: 2,
       vus: 10,
-      testDurationMs: 12_000,
       requests: 120,
-      achievedRps: 10,
     });
   });
 
-  it('fills http with lag', () => {
-    expect(report.http).toEqual({
+  it('fills http with percentiles, ttfb, traffic and lag', () => {
+    expect(report.http).toMatchObject({
       count: 120,
       failedRate: 0.05,
+      failed: 6,
       mismatches: 3,
-      avg: 50,
-      p50: 40,
-      p95: 120,
-      p99: 300,
-      max: 900,
+      duration: { min: 1, avg: 50, p50: 40, p75: 80, p90: 120, p95: 120, p99: 300, p999: 900, max: 900 },
+      ttfb: { avg: 45, p95: 110 },
+      connectingAvg: 2,
+      tlsAvg: 8,
+      dataReceived: 240_000,
+      dataSent: 12_000,
+      avgBodyBytes: 2000,
       lagP95: 20,
       lagMax: 60,
     });
@@ -83,15 +100,14 @@ describe('buildReport', () => {
 
   it('merges component kinds per path and sorts by p95', () => {
     expect(report.components.map((r) => r.path)).toEqual(['clickhouse', 'mongo.read', 'memory']);
-    expect(report.components[0]).toEqual({ path: 'clickhouse', avg: 30, p95: 90, p99: 200, max: 700, num: 120, usage: null, peak: null });
-    expect(report.components[2]).toMatchObject({ path: 'memory', usage: 100, peak: 300, num: null });
+    expect(report.components[0]).toMatchObject({ path: 'clickhouse', time: { avg: 30, p95: 90, p99: 200, max: 700 }, num: 120, usage: null, peak: null });
+    expect(report.components[2]).toMatchObject({ path: 'memory', time: null, usage: 100, peak: 300, num: null });
   });
 
-  it('lists endpoints with samples sorted by count', () => {
-    expect(report.endpoints).toEqual([
-      { endpoint: '/a', count: 100, failedRate: 0.01, p50: 35, p95: 100, max: 900 },
-      { endpoint: '/b', count: 20, failedRate: 0.25, p50: 70, p95: 200, max: 400 },
-    ]);
+  it('lists endpoints with rps and mismatches sorted by count', () => {
+    expect(report.endpoints.map((e) => e.endpoint)).toEqual(['/a', '/b']);
+    expect(report.endpoints[0]).toMatchObject({ endpoint: '/a', count: 100, rps: 100 / 12, failedRate: 0.01, mismatches: 3, duration: { p50: 35, p95: 100, max: 900 } });
+    expect(report.endpoints[1]).toMatchObject({ endpoint: '/b', count: 20, failedRate: 0.25, mismatches: 0 });
   });
 
   it('reports debug health', () => {
@@ -105,9 +121,12 @@ describe('buildReport', () => {
   it('handles rate mode without lag and without schema', () => {
     const rateReport = buildReport(
       { metrics: { http_reqs: counter(5, 1), http_req_duration: trend(1, 2, 3, 4) } },
-      { ...ctx, schema: null, config: parseConfig({ PREFIX: 'http://h', MODE: 'rate' }) },
+      { ...ctx, schema: null, config: parseConfig({ PREFIX: 'http://h', MODE: 'rate', RPS: '7' }) },
     );
+    expect(rateReport.header.targetRps).toBe(7);
+    expect(rateReport.header.startedAt).toBe(rateReport.header.finishedAt);
     expect(rateReport.http.lagP95).toBeNull();
+    expect(rateReport.http.ttfb.avg).toBe(0);
     expect(rateReport.components).toEqual([]);
     expect(rateReport.debug.enabled).toBe(false);
     expect(rateReport.endpoints).toEqual([]);
@@ -118,20 +137,25 @@ describe('renderReport', () => {
   it('renders all sections in plain text', () => {
     const text = renderReport(buildReport(data, ctx), 15, false);
     expect(text).toContain('mode=replay');
+    expect(text).toContain('run:       2026-09-11T08:00:00.000Z → 2026-09-11T08:00:12.000Z (12.0s)');
     expect(text).toContain('120 of 130 log entries, 4 malformed lines skipped');
+    expect(text).toContain('2026-09-10T12:00:00.000Z → 2026-09-10T12:00:24.000Z, 24.0s span, 5 rps');
     expect(text).toContain('ratio x2 (target 10 rps), max 10 VUs');
-    expect(text).toContain('failed (5xx/transport) 5.00%   status != log 3');
+    expect(text).toContain('failed (5xx/transport) 6 (5.00%)   status != log 3   received 234.4 KB (avg 2.0 KB/resp)   sent 11.7 KB');
+    expect(text).toMatch(/duration\s+1\.00ms\s+50\.0ms\s+40\.0ms\s+120ms\s+120ms\s+300ms\s+900ms/);
+    expect(text).toMatch(/ttfb\s+1\.00ms\s+45\.0ms/);
     expect(text).toContain('schedule lag p95 20.0ms  max 60.0ms');
     expect(text).toContain('COMPONENTS');
-    expect(text).toMatch(/clickhouse\s+30\.0ms\s+90\.0ms\s+200ms\s+700ms\s+120/);
+    expect(text).toMatch(/clickhouse\s+1\.00ms\s+30\.0ms\s+30\.0ms\s+90\.0ms\s+90\.0ms\s+200ms\s+700ms\s+120/);
     expect(text).toContain('2 responses without a debug block');
-    expect(text).toMatch(/\/b\s+20\s+25\.00%\s+70\.0ms\s+200ms\s+400ms/);
-    expect(text).not.toContain('[');
+    expect(text).toMatch(/\/a\s+100\s+8\.33\s+1\.00%\s+3\s+/);
+    expect(text).toMatch(/\/b\s+20\s+1\.67\s+25\.00%\s+0\s+/);
+    expect(text).not.toContain('[');
   });
 
   it('explains the missing schema and colors the output', () => {
     const text = renderReport(buildReport(data, { ...ctx, schema: null }), 15, true);
     expect(text).toContain('run discover.ts first');
-    expect(text).toContain('[1m');
+    expect(text).toContain('[1m');
   });
 });

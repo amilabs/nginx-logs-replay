@@ -6,6 +6,7 @@ COPY examples ./examples
 WORKDIR /work
 ENV LOG=/work/access.log \
     DEBUG_SCHEMA=/work/debug-schema.json \
-    SUMMARY_JSON=/work/summary.json
+    SUMMARY_JSON=/work/summary.json \
+    SUMMARY_HTML=/work/summary.html
 ENTRYPOINT ["k6", "run"]
 CMD ["/app/src/replay.ts"]

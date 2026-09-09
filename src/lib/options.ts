@@ -7,7 +7,7 @@ import type { Config } from './config.ts';
 import { iterationsPerVu, replayMaxDuration } from './schedule.ts';
 
 export const SCENARIO_NAME = 'nginx_replay';
-export const TREND_STATS = ['avg', 'min', 'med', 'p(90)', 'p(95)', 'p(99)', 'max'] as const;
+export const TREND_STATS = ['avg', 'min', 'med', 'p(75)', 'p(90)', 'p(95)', 'p(99)', 'p(99.9)', 'max'] as const;
 
 export interface EndpointCount {
   readonly endpoint: string;
@@ -30,6 +30,7 @@ export function buildThresholds(endpoints: readonly EndpointCount[]): Thresholds
     entries.push([`http_reqs{endpoint:${endpoint}}`, ['count>=0']]);
     entries.push([`http_req_duration{endpoint:${endpoint}}`, ['max>=0']]);
     entries.push([`http_req_failed{endpoint:${endpoint}}`, ['rate>=0']]);
+    entries.push([`replay_status_mismatch{endpoint:${endpoint}}`, ['count>=0']]);
   }
   return Object.fromEntries(entries);
 }

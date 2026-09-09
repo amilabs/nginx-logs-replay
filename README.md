@@ -10,7 +10,9 @@ Two scripts, no daemon:
 - `src/discover.ts` — probes the target, learns the shape of the `debug`
   block, writes `debug-schema.json`.
 - `src/replay.ts` — replays the log (timeline or fixed RPS), prints a
-  component/endpoint breakdown, writes `summary.json`.
+  component/endpoint breakdown, writes `summary.json` and a self-contained
+  `summary.html` (charts, full percentiles, per-endpoint and per-component
+  tables).
 
 Live metrics come from k6 itself: the built-in web dashboard and, optionally,
 Prometheus remote write for Grafana.
@@ -80,6 +82,8 @@ k6 run -o experimental-prometheus-rw --tag testid=eth3-$(date +%s) -e PREFIX=...
 | `DISCOVER_N` | `5` | discover: how many requests to probe |
 | `TOP` | `15` | endpoints shown in the summary |
 | `SUMMARY_JSON` | `./summary.json` | machine-readable summary |
+| `SUMMARY_HTML` | `./summary.html` | HTML report (inline CSS/SVG, no JS); empty disables |
+| `DASHBOARD_HREF` | | link to the k6 dashboard export shown in the HTML report |
 | `NO_COLOR` | | disable ANSI colors |
 
 ## How the load is generated
@@ -152,6 +156,12 @@ endpoint                      count   failed     p50     p95     max
 ```
 
 `summary.json` contains the same report model plus the raw k6 summary.
+`summary.html` is the same report with bar charts (latency percentiles,
+components by p95, endpoints by latency and volume) and full tables; pair it
+with the k6 dashboard export (`K6_WEB_DASHBOARD_EXPORT`) for time series.
+
+Stopping a run early (Ctrl+C, SIGTERM, `docker stop`) still produces the
+summary: k6 finishes in-flight requests and runs `handleSummary`.
 
 ## Development
 

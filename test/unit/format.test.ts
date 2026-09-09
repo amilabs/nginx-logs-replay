@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ANSI, PLAIN, fmtDuration, fmtMs, fmtNum, fmtPct, palette, table } from '../../src/lib/format.ts';
+import { ANSI, PLAIN, fmtBytes, fmtDuration, fmtMs, fmtNum, fmtPct, palette, table } from '../../src/lib/format.ts';
 
 describe('table', () => {
   it('aligns first column left and the rest right', () => {
@@ -29,6 +29,14 @@ describe('formatters', () => {
     expect(fmtNum(undefined)).toBe('-');
     expect(fmtPct(0.1234)).toBe('12.34%');
     expect(fmtPct(NaN)).toBe('-');
+  });
+
+  it('fmtBytes', () => {
+    expect(fmtBytes(512)).toBe('512 B');
+    expect(fmtBytes(1536)).toBe('1.5 KB');
+    expect(fmtBytes(2.3 * 1024 * 1024)).toBe('2.3 MB');
+    expect(fmtBytes(3 * 1024 ** 3)).toBe('3.00 GB');
+    expect(fmtBytes(null)).toBe('-');
   });
 
   it('fmtDuration', () => {

@@ -33,6 +33,9 @@ export interface PoolStats {
   readonly kept: number;
   readonly spanMs: number;
   readonly originalRps: number;
+  /** Unix ms of the first/last replayed log entry (0 when the pool is empty). */
+  readonly firstTs: number;
+  readonly lastTs: number;
 }
 
 function matchesAny(path: string, needles: readonly string[]): boolean {
@@ -68,7 +71,7 @@ export function poolStats(total: number, pool: readonly PoolEntry[]): PoolStats 
   const last = pool[pool.length - 1];
   const spanMs = first && last ? last.ts - first.ts : 0;
   const originalRps = spanMs > 0 ? (pool.length * 1000) / spanMs : pool.length;
-  return { total, kept: pool.length, spanMs, originalRps };
+  return { total, kept: pool.length, spanMs, originalRps, firstTs: first?.ts ?? 0, lastTs: last?.ts ?? 0 };
 }
 
 /** Path without query string or fragment. */

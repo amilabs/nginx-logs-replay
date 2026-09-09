@@ -1,11 +1,11 @@
 /**
- * Turns k6's end-of-test summary data into a report model and renders it.
- * Pure: the k6 data shape is described locally, no k6 imports.
+ * Turns k6's end-of-test summary data into a report model and renders it as
+ * console text. The same model feeds html-report.ts. Pure.
  */
 
 import type { Config } from './config.ts';
 import type { DebugSchema } from './debug-walker.ts';
-import { fmtDuration, fmtMs, fmtNum, fmtPct, palette, table } from './format.ts';
+import { fmtBytes, fmtDuration, fmtMs, fmtNum, fmtPct, palette, table } from './format.ts';
 import type { PoolStats } from './request-pool.ts';
 
 /** Subset of the k6 handleSummary `data` argument that the report uses. */
@@ -27,43 +27,66 @@ export interface ReportContext {
   readonly malformed: number;
   /** VUs actually allocated (replay caps them at the pool size). */
   readonly vus?: number;
+  /** Wall-clock end of the run; defaults to now. */
+  readonly finishedAt?: Date;
+}
+
+/** Latency distribution in ms. */
+export interface Percentiles {
+  readonly min: number;
+  readonly avg: number;
+  readonly p50: number;
+  readonly p75: number;
+  readonly p90: number;
+  readonly p95: number;
+  readonly p99: number;
+  readonly p999: number;
+  readonly max: number;
 }
 
 export interface HeaderSection {
   readonly mode: string;
   readonly prefix: string;
+  readonly startedAt: string;
+  readonly finishedAt: string;
+  readonly testDurationMs: number;
   readonly poolTotal: number;
   readonly poolKept: number;
   readonly malformed: number;
+  readonly logFrom: string;
+  readonly logTo: string;
   readonly spanMs: number;
   readonly originalRps: number;
+  readonly targetRps: number;
+  readonly achievedRps: number;
   readonly ratio: number;
   readonly rps: number;
+  readonly duration: string;
   readonly vus: number;
-  readonly testDurationMs: number;
+  readonly maxVus: number;
   readonly requests: number;
-  readonly achievedRps: number;
 }
 
 export interface HttpSection {
   readonly count: number;
   readonly failedRate: number;
+  readonly failed: number;
   readonly mismatches: number;
-  readonly avg: number;
-  readonly p50: number;
-  readonly p95: number;
-  readonly p99: number;
-  readonly max: number;
+  readonly duration: Percentiles;
+  /** Time to first byte (http_req_waiting). */
+  readonly ttfb: Percentiles;
+  readonly connectingAvg: number;
+  readonly tlsAvg: number;
+  readonly dataReceived: number;
+  readonly dataSent: number;
+  readonly avgBodyBytes: number;
   readonly lagP95: number | null;
   readonly lagMax: number | null;
 }
 
 export interface ComponentRow {
   readonly path: string;
-  readonly avg: number | null;
-  readonly p95: number | null;
-  readonly p99: number | null;
-  readonly max: number | null;
+  readonly time: Percentiles | null;
   readonly num: number | null;
   readonly usage: number | null;
   readonly peak: number | null;
@@ -72,10 +95,10 @@ export interface ComponentRow {
 export interface EndpointRow {
   readonly endpoint: string;
   readonly count: number;
+  readonly rps: number;
   readonly failedRate: number;
-  readonly p50: number;
-  readonly p95: number;
-  readonly max: number;
+  readonly mismatches: number;
+  readonly duration: Percentiles;
 }
 
 export interface DebugSection {
@@ -103,35 +126,75 @@ function num(value: number | null): number {
   return value ?? 0;
 }
 
-function buildHeader(data: K6SummaryData, ctx: ReportContext): HeaderSection {
+function percentiles(data: K6SummaryData, name: string): Percentiles | null {
+  const metric = data.metrics[name];
+  if (!metric) return null;
+  const v = metric.values;
   return {
-    mode: ctx.config.mode,
+    min: num(v.min ?? null),
+    avg: num(v.avg ?? null),
+    p50: num(v.med ?? null),
+    p75: num(v['p(75)'] ?? null),
+    p90: num(v['p(90)'] ?? null),
+    p95: num(v['p(95)'] ?? null),
+    p99: num(v['p(99)'] ?? null),
+    p999: num(v['p(99.9)'] ?? null),
+    max: num(v.max ?? null),
+  };
+}
+
+const EMPTY: Percentiles = { min: 0, avg: 0, p50: 0, p75: 0, p90: 0, p95: 0, p99: 0, p999: 0, max: 0 };
+
+function iso(ms: number): string {
+  return ms > 0 && Number.isFinite(ms) ? new Date(ms).toISOString() : '-';
+}
+
+function buildHeader(data: K6SummaryData, ctx: ReportContext): HeaderSection {
+  const testDurationMs = data.state?.testRunDurationMs ?? 0;
+  const finished = ctx.finishedAt ?? new Date();
+  const mode = ctx.config.mode;
+  return {
+    mode,
     prefix: ctx.config.prefix,
+    startedAt: iso(finished.getTime() - testDurationMs),
+    finishedAt: iso(finished.getTime()),
+    testDurationMs,
     poolTotal: ctx.pool.total,
     poolKept: ctx.pool.kept,
     malformed: ctx.malformed,
+    logFrom: iso(ctx.pool.firstTs),
+    logTo: iso(ctx.pool.lastTs),
     spanMs: ctx.pool.spanMs,
     originalRps: ctx.pool.originalRps,
+    targetRps: mode === 'replay' ? ctx.pool.originalRps * ctx.config.ratio : ctx.config.rps,
+    achievedRps: num(metricValue(data, 'http_reqs', 'rate')),
     ratio: ctx.config.ratio,
     rps: ctx.config.rps,
+    duration: ctx.config.duration,
     vus: ctx.vus ?? ctx.config.vus,
-    testDurationMs: data.state?.testRunDurationMs ?? 0,
+    maxVus: mode === 'rate' ? ctx.config.maxVus : (ctx.vus ?? ctx.config.vus),
     requests: num(metricValue(data, 'http_reqs', 'count')),
-    achievedRps: num(metricValue(data, 'http_reqs', 'rate')),
   };
 }
 
 function buildHttp(data: K6SummaryData): HttpSection {
+  const count = num(metricValue(data, 'http_reqs', 'count'));
+  const failedRate = num(metricValue(data, 'http_req_failed', 'rate'));
   const lagP95 = metricValue(data, 'replay_lag_ms', 'p(95)');
+  const dataReceived = num(metricValue(data, 'data_received', 'count'));
   return {
-    count: num(metricValue(data, 'http_reqs', 'count')),
-    failedRate: num(metricValue(data, 'http_req_failed', 'rate')),
+    count,
+    failedRate,
+    // k6 Rate metrics count `passes` as non-zero samples: for http_req_failed a "pass" IS a failed request.
+    failed: metricValue(data, 'http_req_failed', 'passes') ?? Math.round(failedRate * count),
     mismatches: num(metricValue(data, 'replay_status_mismatch', 'count')),
-    avg: num(metricValue(data, 'http_req_duration', 'avg')),
-    p50: num(metricValue(data, 'http_req_duration', 'med')),
-    p95: num(metricValue(data, 'http_req_duration', 'p(95)')),
-    p99: num(metricValue(data, 'http_req_duration', 'p(99)')),
-    max: num(metricValue(data, 'http_req_duration', 'max')),
+    duration: percentiles(data, 'http_req_duration') ?? EMPTY,
+    ttfb: percentiles(data, 'http_req_waiting') ?? EMPTY,
+    connectingAvg: num(metricValue(data, 'http_req_connecting', 'avg')),
+    tlsAvg: num(metricValue(data, 'http_req_tls_handshaking', 'avg')),
+    dataReceived,
+    dataSent: num(metricValue(data, 'data_sent', 'count')),
+    avgBodyBytes: count > 0 ? dataReceived / count : 0,
     lagP95,
     lagMax: lagP95 === null ? null : metricValue(data, 'replay_lag_ms', 'max'),
   };
@@ -140,14 +203,14 @@ function buildHttp(data: K6SummaryData): HttpSection {
 function buildComponents(data: K6SummaryData, schema: DebugSchema | null): ComponentRow[] {
   if (!schema) return [];
   const rows = new Map<string, ComponentRow>();
-  const empty = (path: string): ComponentRow => ({ path, avg: null, p95: null, p99: null, max: null, num: null, usage: null, peak: null });
+  const empty = (path: string): ComponentRow => ({ path, time: null, num: null, usage: null, peak: null });
   for (const entry of schema.entries) {
     const metric = data.metrics[entry.metric];
     if (!metric) continue;
     const row = rows.get(entry.path) ?? empty(entry.path);
     const patch: Partial<ComponentRow> =
       entry.kind === 'time'
-        ? { avg: metric.values.avg ?? null, p95: metric.values['p(95)'] ?? null, p99: metric.values['p(99)'] ?? null, max: metric.values.max ?? null }
+        ? { time: percentiles(data, entry.metric) }
         : entry.kind === 'num'
           ? { num: metric.values.count ?? null }
           : entry.kind === 'usage'
@@ -155,10 +218,11 @@ function buildComponents(data: K6SummaryData, schema: DebugSchema | null): Compo
             : { peak: metric.values.max ?? null };
     rows.set(entry.path, { ...row, ...patch });
   }
-  return [...rows.values()].sort((a, b) => num(b.p95) - num(a.p95) || num(b.num) - num(a.num) || a.path.localeCompare(b.path));
+  const p95 = (r: ComponentRow): number => r.time?.p95 ?? 0;
+  return [...rows.values()].sort((a, b) => p95(b) - p95(a) || num(b.num) - num(a.num) || a.path.localeCompare(b.path));
 }
 
-function buildEndpoints(data: K6SummaryData): EndpointRow[] {
+function buildEndpoints(data: K6SummaryData, testDurationMs: number): EndpointRow[] {
   const endpoints = new Set<string>();
   for (const name of Object.keys(data.metrics)) {
     const match = SUBMETRIC_RE.exec(name);
@@ -167,13 +231,14 @@ function buildEndpoints(data: K6SummaryData): EndpointRow[] {
   return [...endpoints]
     .map((endpoint): EndpointRow => {
       const sub = (metric: string, key: string): number => num(metricValue(data, `${metric}{endpoint:${endpoint}}`, key));
+      const count = sub('http_reqs', 'count');
       return {
         endpoint,
-        count: sub('http_reqs', 'count'),
+        count,
+        rps: testDurationMs > 0 ? (count * 1000) / testDurationMs : 0,
         failedRate: sub('http_req_failed', 'rate'),
-        p50: sub('http_req_duration', 'med'),
-        p95: sub('http_req_duration', 'p(95)'),
-        max: sub('http_req_duration', 'max'),
+        mismatches: sub('replay_status_mismatch', 'count'),
+        duration: percentiles(data, `http_req_duration{endpoint:${endpoint}}`) ?? EMPTY,
       };
     })
     .filter((row) => row.count > 0)
@@ -190,39 +255,51 @@ function buildDebug(data: K6SummaryData, schema: DebugSchema | null): DebugSecti
 
 /** Builds the report model from k6 summary data. */
 export function buildReport(data: K6SummaryData, ctx: ReportContext): Report {
+  const header = buildHeader(data, ctx);
   return {
-    header: buildHeader(data, ctx),
+    header,
     http: buildHttp(data),
     components: buildComponents(data, ctx.schema),
-    endpoints: buildEndpoints(data),
+    endpoints: buildEndpoints(data, header.testDurationMs),
     debug: buildDebug(data, ctx.schema),
   };
 }
+
+// ---------------------------------------------------------------- console --
+
+function pctCells(p: Percentiles | null): string[] {
+  if (!p) return PCT_HEADERS.map(() => '-');
+  return [fmtMs(p.min), fmtMs(p.avg), fmtMs(p.p50), fmtMs(p.p90), fmtMs(p.p95), fmtMs(p.p99), fmtMs(p.max)];
+}
+
+const PCT_HEADERS = ['min', 'avg', 'p50', 'p90', 'p95', 'p99', 'max'];
 
 function renderHeader(h: HeaderSection, colors: boolean): string {
   const c = palette(colors);
   const load =
     h.mode === 'replay'
-      ? `ratio x${fmtNum(h.ratio)} (target ${fmtNum(h.originalRps * h.ratio)} rps), max ${h.vus} VUs`
-      : `${fmtNum(h.rps)} rps, ${h.vus} VUs`;
+      ? `ratio x${fmtNum(h.ratio)} (target ${fmtNum(h.targetRps)} rps), max ${h.vus} VUs`
+      : `${fmtNum(h.rps)} rps for ${h.duration}, ${h.vus} VUs (max ${h.maxVus})`;
   const malformed = h.malformed > 0 ? c.yellow(`, ${h.malformed} malformed lines skipped`) : '';
   return [
     c.bold(c.cyan(`nginx-logs-replay  mode=${h.mode}  target=${h.prefix}`)),
+    `${c.dim('run:')}       ${h.startedAt} → ${h.finishedAt} (${fmtDuration(h.testDurationMs)})`,
     `${c.dim('pool:')}      ${h.poolKept} of ${h.poolTotal} log entries${malformed}`,
-    `${c.dim('original:')}  ${fmtDuration(h.spanMs)} span, ${fmtNum(h.originalRps)} rps`,
+    `${c.dim('original:')}  ${h.logFrom} → ${h.logTo}, ${fmtDuration(h.spanMs)} span, ${fmtNum(h.originalRps)} rps`,
     `${c.dim('load:')}      ${load}`,
-    `${c.dim('achieved:')}  ${h.requests} requests in ${fmtDuration(h.testDurationMs)}, ${fmtNum(h.achievedRps)} rps`,
+    `${c.dim('achieved:')}  ${h.requests} requests, ${fmtNum(h.achievedRps)} rps`,
   ].join('\n');
 }
 
 function renderHttp(s: HttpSection, colors: boolean): string {
   const c = palette(colors);
-  const failed = s.failedRate > 0 ? c.red(fmtPct(s.failedRate)) : c.green(fmtPct(s.failedRate));
+  const failed = s.failedRate > 0 ? c.red(`${s.failed} (${fmtPct(s.failedRate)})`) : c.green(fmtPct(s.failedRate));
   const mismatch = s.mismatches > 0 ? c.yellow(String(s.mismatches)) : String(s.mismatches);
   const lines = [
     c.bold('HTTP'),
-    `requests ${s.count}   failed (5xx/transport) ${failed}   status != log ${mismatch}`,
-    `duration avg ${fmtMs(s.avg)}  p50 ${fmtMs(s.p50)}  p95 ${fmtMs(s.p95)}  p99 ${fmtMs(s.p99)}  max ${fmtMs(s.max)}`,
+    `requests ${s.count}   failed (5xx/transport) ${failed}   status != log ${mismatch}   received ${fmtBytes(s.dataReceived)} (avg ${fmtBytes(s.avgBodyBytes)}/resp)   sent ${fmtBytes(s.dataSent)}`,
+    table(['', ...PCT_HEADERS], [['duration', ...pctCells(s.duration)], ['ttfb', ...pctCells(s.ttfb)]]),
+    c.dim(`connecting avg ${fmtMs(s.connectingAvg)}  tls avg ${fmtMs(s.tlsAvg)}`),
   ];
   if (s.lagP95 !== null) {
     const lag = `schedule lag p95 ${fmtMs(s.lagP95)}  max ${fmtMs(s.lagMax)}`;
@@ -236,8 +313,8 @@ function renderComponents(rows: readonly ComponentRow[], debug: DebugSection, co
   if (!debug.enabled) return `${c.bold('COMPONENTS')}\n${c.dim('no debug schema: run discover.ts first to get per-component metrics')}`;
   if (rows.length === 0) return `${c.bold('COMPONENTS')}\n${c.dim('no debug samples recorded')}`;
   const body = table(
-    ['component', 'avg', 'p95', 'p99', 'max', 'num', 'mem avg', 'mem peak'],
-    rows.map((r) => [r.path, fmtMs(r.avg), fmtMs(r.p95), fmtMs(r.p99), fmtMs(r.max), fmtNum(r.num), fmtNum(r.usage), fmtNum(r.peak)]),
+    ['component', ...PCT_HEADERS, 'num', 'mem avg', 'mem peak'],
+    rows.map((r) => [r.path, ...pctCells(r.time), fmtNum(r.num), fmtNum(r.usage), fmtNum(r.peak)]),
   );
   const notes: string[] = [];
   if (debug.missing > 0) notes.push(c.yellow(`${debug.missing} responses without a debug block`));
@@ -249,10 +326,17 @@ function renderEndpoints(rows: readonly EndpointRow[], top: number, colors: bool
   const c = palette(colors);
   if (rows.length === 0) return '';
   const body = table(
-    ['endpoint', 'count', 'failed', 'p50', 'p95', 'max'],
-    rows.map((r) => [r.endpoint, String(r.count), r.failedRate > 0 ? c.red(fmtPct(r.failedRate)) : fmtPct(r.failedRate), fmtMs(r.p50), fmtMs(r.p95), fmtMs(r.max)]),
+    ['endpoint', 'count', 'rps', 'failed', '!=log', ...PCT_HEADERS],
+    rows.map((r) => [
+      r.endpoint,
+      String(r.count),
+      fmtNum(r.rps),
+      r.failedRate > 0 ? c.red(fmtPct(r.failedRate)) : fmtPct(r.failedRate),
+      r.mismatches > 0 ? c.yellow(String(r.mismatches)) : String(r.mismatches),
+      ...pctCells(r.duration),
+    ]),
   );
-  return [`${c.bold(`ENDPOINTS`)} ${c.dim(`(top ${top} by count)`)}`, body].join('\n');
+  return [`${c.bold('ENDPOINTS')} ${c.dim(`(top ${top} by count)`)}`, body].join('\n');
 }
 
 /** Renders the report as console text. */

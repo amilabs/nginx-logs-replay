@@ -14,6 +14,7 @@ pipeline {
     environment {
         IMAGE = "nginx-logs-replay:${env.BUILD_NUMBER}"
         WORK = "${env.WORKSPACE}/work"
+        CONTAINER = "nginx-logs-replay-${env.JOB_BASE_NAME}-${env.BUILD_NUMBER}"
     }
     stages {
         stage('Resolve mode') {
@@ -74,30 +75,46 @@ pipeline {
         }
         stage('Run') {
             steps {
+                // Detached container so that an aborted build can still stop k6
+                // gracefully (SIGTERM => k6 writes the summary) in the post block.
                 sh '''
-                    docker run --rm --network=host -v "$WORK:/work" \
-                        -e K6_WEB_DASHBOARD=true -e K6_WEB_DASHBOARD_EXPORT=/work/report.html \
+                    docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
+                    docker run -d --name "$CONTAINER" --network=host -v "$WORK:/work" \
+                        -e K6_WEB_DASHBOARD=true -e K6_WEB_DASHBOARD_EXPORT=/work/k6-dashboard.html -e K6_WEB_DASHBOARD_PERIOD=1s \
                         "$IMAGE" \
                         -e PREFIX="$PREFIX" -e MODE="$MODE" -e RATIO="$RATIO" -e RPS="$RPS" \
                         -e DURATION="$DURATION" -e VUS="$VUS" -e QUERY_PARAMS="$QUERY_PARAMS" \
-                        -e CACHE_BUSTER=cb -e DEBUG_TIME_UNIT=s -e NO_COLOR=1 $EXTRA_ENV \
-                        /app/src/replay.ts
+                        -e CACHE_BUSTER=cb -e DEBUG_TIME_UNIT=s -e DASHBOARD_HREF=k6-dashboard.html -e NO_COLOR=1 $EXTRA_ENV \
+                        /app/src/replay.ts >/dev/null
+                    docker logs -f "$CONTAINER"
+                    exit "$(docker wait "$CONTAINER")"
                 '''
             }
         }
     }
     post {
         always {
-            archiveArtifacts artifacts: 'work/summary.json, work/report.html, work/debug-schema.json', allowEmptyArchive: true
+            // On abort the container is still running: stop it gracefully so the
+            // summary (console, summary.json, summary.html, k6-dashboard.html) is written.
+            sh '''
+                if [ -n "$(docker ps -q --filter "name=^$CONTAINER$")" ]; then
+                    echo "Build interrupted: stopping k6 gracefully (up to 60s) to get the report"
+                    docker stop -t 60 "$CONTAINER" >/dev/null || true
+                    docker logs --tail 150 "$CONTAINER" 2>&1 || true
+                fi
+                docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
+            '''
+            archiveArtifacts artifacts: 'work/summary.json, work/summary.html, work/k6-dashboard.html, work/debug-schema.json', allowEmptyArchive: true
             script {
-                if (fileExists('work/report.html')) {
+                if (fileExists('work/summary.html')) {
                     publishHTML([
                         allowMissing: true,
                         alwaysLinkToLastBuild: true,
                         keepAll: true,
                         reportDir: 'work',
-                        reportFiles: 'report.html',
-                        reportName: 'k6 report',
+                        reportFiles: 'summary.html,k6-dashboard.html',
+                        reportTitles: 'Summary,k6 dashboard (time series)',
+                        reportName: 'Replay report',
                     ])
                 }
             }

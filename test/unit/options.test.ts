@@ -12,6 +12,7 @@ describe('buildThresholds', () => {
       'http_reqs{endpoint:/api/v1/x}',
       'http_req_duration{endpoint:/api/v1/x}',
       'http_req_failed{endpoint:/api/v1/x}',
+      'replay_status_mismatch{endpoint:/api/v1/x}',
     ]);
     expect(thresholds['http_req_duration{endpoint:/api/v1/x}']).toEqual(['max>=0']);
   });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ConfigError, DEFAULT_FORMAT, durationToMs, parseConfig, parseQueryParams, splitList } from '../../src/lib/config.ts';
+import { ConfigError, DEFAULT_FORMAT, durationToMs, parseConfig, parseQueryParams, resolvePath, splitList } from '../../src/lib/config.ts';
 
 const base = { PREFIX: 'https://api.example.com/' };
 
@@ -18,6 +18,14 @@ describe('parseConfig', () => {
     expect(cfg.colors).toBe(true);
     expect(cfg.normalizeEndpoints).toBe(true);
     expect(cfg.debugTimeFactor).toBe(1);
+    expect(cfg.summaryHtml).toBe('./summary.html');
+    expect(cfg.dashboardHref).toBe('');
+  });
+
+  it('lets SUMMARY_HTML be disabled and DASHBOARD_HREF be set', () => {
+    const cfg = parseConfig({ ...base, SUMMARY_HTML: '', DASHBOARD_HREF: 'k6-dashboard.html' });
+    expect(cfg.summaryHtml).toBe('');
+    expect(cfg.dashboardHref).toBe('k6-dashboard.html');
   });
 
   it('rejects an unknown DEBUG_TIME_UNIT', () => {
@@ -101,6 +109,24 @@ describe('parseConfig', () => {
 
   it('rejects PREFIX without scheme and MAX_VUS below VUS', () => {
     expect(() => parseConfig({ PREFIX: 'api.example.com', VUS: '10', MAX_VUS: '5' })).toThrow(/PREFIX must start.*\n.*MAX_VUS/s);
+  });
+});
+
+describe('paths', () => {
+  it('anchors relative file paths to PWD', () => {
+    const cfg = parseConfig({ ...base, PWD: '/home/u/bench/', LOG: './logs/a.log', DEBUG_SCHEMA: 'schema.json', SUMMARY_HTML: '' });
+    expect(cfg.log).toBe('/home/u/bench/logs/a.log');
+    expect(cfg.debugSchema).toBe('/home/u/bench/schema.json');
+    expect(cfg.summaryJson).toBe('/home/u/bench/summary.json');
+    expect(cfg.summaryHtml).toBe('');
+  });
+
+  it('leaves absolute paths, "none" and missing PWD alone', () => {
+    expect(resolvePath('/abs/x.log', '/pwd')).toBe('/abs/x.log');
+    expect(resolvePath('C:\\x.log', '/pwd')).toBe('C:\\x.log');
+    expect(resolvePath('none', '/pwd')).toBe('none');
+    expect(resolvePath('./x.log', undefined)).toBe('./x.log');
+    expect(parseConfig({ ...base }).log).toBe('./access.log');
   });
 });
 
