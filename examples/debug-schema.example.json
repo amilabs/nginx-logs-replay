@@ -1,0 +1,15 @@
+{
+  "field": "debug",
+  "entries": [
+    { "path": "clickhouse", "kind": "num", "metric": "dbg_clickhouse_num" },
+    { "path": "clickhouse", "kind": "time", "metric": "dbg_clickhouse_time" },
+    { "path": "clickhouse.getTxs", "kind": "time", "metric": "dbg_clickhouse_getTxs_time" },
+    { "path": "memory", "kind": "peak", "metric": "dbg_memory_peak" },
+    { "path": "memory", "kind": "usage", "metric": "dbg_memory_usage" },
+    { "path": "mongo.read", "kind": "num", "metric": "dbg_mongo_read_num" },
+    { "path": "mongo.read", "kind": "time", "metric": "dbg_mongo_read_time" },
+    { "path": "redis.read", "kind": "num", "metric": "dbg_redis_read_num" },
+    { "path": "redis.read", "kind": "time", "metric": "dbg_redis_read_time" },
+    { "path": "totalTime", "kind": "time", "metric": "dbg_totalTime_time" }
+  ]
+}

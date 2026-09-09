@@ -1,0 +1,11 @@
+node_modules
+coverage
+.git
+.idea
+.vscode
+docs
+test
+*.log
+*.log.gz
+summary.json
+report.html

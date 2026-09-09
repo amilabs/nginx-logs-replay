@@ -2,52 +2,83 @@ pipeline {
     agent { label "${params.AGENT}" }
     options {
         disableConcurrentBuilds()
+        timestamps()
+    }
+    parameters {
+        choice(name: 'AGENT', choices: ['agent1', 'agent2', 'agent3'], description: 'Agent to run the load from')
+        file(name: 'FILE', description: 'nginx access log (plain or .gz)')
+        string(name: 'PREFIX', defaultValue: 'https://api.example.com', description: 'Target base URL')
+        choice(name: 'MODE', choices: ['replay', 'rate'], description: 'replay = log timeline, rate = fixed RPS')
+        string(name: 'RATIO', defaultValue: '1', description: 'replay: speed multiplier')
+        string(name: 'RPS', defaultValue: '10', description: 'rate: requests per second')
+        string(name: 'DURATION', defaultValue: '60s', description: 'rate: duration')
+        string(name: 'VUS', defaultValue: '50', description: 'max concurrency (replay) / pre-allocated VUs (rate)')
+        booleanParam(name: 'DISCOVER', defaultValue: true, description: 'Run discover.ts first to build the debug schema')
+        string(name: 'EXTRA_ENV', defaultValue: '', description: 'Extra k6 -e options, e.g. "-e CACHE_BUSTER=cb -e QUERY_PARAMS=apiKey=x"')
+    }
+    environment {
+        IMAGE = "nginx-logs-replay:${env.BUILD_NUMBER}"
+        WORK = "${env.WORKSPACE}/work"
     }
     stages {
-        stage('Install Dependencies') {
+        stage('Build image') {
             steps {
-                sh 'npm i'
+                sh 'docker build -t "$IMAGE" .'
             }
         }
-        stage('Run nginx-logs-replay') {
+        stage('Prepare log') {
             steps {
+                sh 'rm -rf "$WORK" && mkdir -p "$WORK"'
+                unstash 'FILE'
                 script {
-                    unstash 'FILE'
-                    if (env.FILE_FILENAME.endsWith('.gz')) {
-                        sh "mv FILE TEMP_FILE.gz"
-                        sh 'gunzip -c "TEMP_FILE.gz" > FILE'
+                    if (env.FILE_FILENAME?.endsWith('.gz')) {
+                        sh 'gunzip -c FILE > "$WORK/access.log"'
+                    } else {
+                        sh 'mv FILE "$WORK/access.log"'
                     }
-                    sh """
-                        node index.js \\
-                            --filePath FILE \\
-                            --ratio $RATIO \\
-                            --prefix $PREFIX \\
-                            $CUSTOM_OPTIONS
-                    """
                 }
+                sh 'wc -l "$WORK/access.log"'
+            }
+        }
+        stage('Discover debug schema') {
+            when { expression { params.DISCOVER } }
+            steps {
+                sh '''
+                    docker run --rm --network=host -v "$WORK:/work" "$IMAGE" \
+                        -e PREFIX="$PREFIX" -e NO_COLOR=1 $EXTRA_ENV /app/src/discover.ts
+                '''
+            }
+        }
+        stage('Replay') {
+            steps {
+                sh '''
+                    docker run --rm --network=host -v "$WORK:/work" \
+                        -e K6_WEB_DASHBOARD=true -e K6_WEB_DASHBOARD_EXPORT=/work/report.html \
+                        "$IMAGE" \
+                        -e PREFIX="$PREFIX" -e MODE="$MODE" -e RATIO="$RATIO" -e RPS="$RPS" \
+                        -e DURATION="$DURATION" -e VUS="$VUS" -e NO_COLOR=1 $EXTRA_ENV \
+                        /app/src/replay.ts
+                '''
             }
         }
     }
     post {
         always {
+            archiveArtifacts artifacts: 'work/summary.json, work/report.html, work/debug-schema.json', allowEmptyArchive: true
             script {
-                if (fileExists('time_diff_histogram.html')) {
-                    archiveArtifacts artifacts: 'time_diff_histogram.html', fingerprint: true
+                if (fileExists('work/report.html')) {
                     publishHTML([
-                        allowMissing: false,
+                        allowMissing: true,
                         alwaysLinkToLastBuild: true,
                         keepAll: true,
-                        reportDir: '.',
-                        reportFiles: 'time_diff_histogram.html',
-                        reportName: 'TimeDiff Histogram Report',
-                        reportTitles: ''
+                        reportDir: 'work',
+                        reportFiles: 'report.html',
+                        reportName: 'k6 report',
                     ])
-                    echo 'TimeDiff histogram generated and published successfully'
-                } else {
-                    echo 'TimeDiff histogram file not found - skipping artifact archiving and HTML report publishing'
                 }
             }
+            sh 'docker rmi "$IMAGE" || true'
             cleanWs()
         }
     }
-}           
+}
