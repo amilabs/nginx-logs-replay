@@ -164,6 +164,8 @@ See `CLAUDE.md` for the code layout and rules.
 
 ## Jenkins
 
-`Jenkinsfile` runs the Docker image: upload a log (plain or `.gz`), set
-`PREFIX`, `MODE`, `RATIO`/`RPS`, `VUS`, `DURATION`, extra `-e` options in
-`EXTRA_ENV`. Artifacts: `summary.json`, `report.html`, `debug-schema.json`.
+`Jenkinsfile` runs the Docker image: upload a log (plain or `.gz`; empty =
+smoke run on `examples/access.log`), set `PREFIX`, `LOAD`, `VUS`, extra `-e`
+options in `EXTRA_ENV`. `LOAD` is one field for both modes: `x1` / `x2` /
+`0.5` replay the log at that speed, `50rps` or `50rps for 5m` fire a fixed
+rate. Artifacts: `summary.json`, `report.html`, `debug-schema.json`.
