@@ -42,7 +42,17 @@ const MONTHS: Readonly<Record<string, number>> = {
   jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11,
 };
 
-const TIME_LOCAL_RE = /^(\d{1,2})\/([A-Za-z]{3})\/(\d{4}):(\d{2}):(\d{2}):(\d{2})(?:\s*([+-])(\d{2}):?(\d{2}))?$/;
+// Offset forms seen in the wild: +0300, +03:00, +300 (nginx drops the leading zero), +3, Z.
+const TIME_LOCAL_RE = /^(\d{1,2})\/([A-Za-z]{3})\/(\d{4}):(\d{2}):(\d{2}):(\d{2})(?:\s*(?:Z|([+-])(\d{1,2}:?\d{2}|\d{1,2})))?$/;
+
+/** Offset in minutes from `0300`, `03:00`, `300`, `3`. */
+function parseOffsetMinutes(sign: string, raw: string): number {
+  const clean = raw.replace(':', '');
+  const digits = clean.length <= 2 ? `${clean.padStart(2, '0')}00` : clean.padStart(4, '0');
+  const hours = Number(digits.slice(0, 2));
+  const minutes = Number(digits.slice(2));
+  return (sign === '-' ? -1 : 1) * (hours * 60 + minutes);
+}
 
 function escapeRegex(literal: string): string {
   return literal.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -91,10 +101,8 @@ export function parseTimeLocal(value: string): number | null {
     Number(match[5]),
     Number(match[6]),
   );
-  if (match[7] === undefined) return utc;
-  const sign = match[7] === '-' ? -1 : 1;
-  const offsetMs = sign * (Number(match[8]) * 60 + Number(match[9])) * 60_000;
-  return utc - offsetMs;
+  if (match[7] === undefined || match[8] === undefined) return utc;
+  return utc - parseOffsetMinutes(match[7], match[8]) * 60_000;
 }
 
 /** Parses `$msec` (`1757419200.123`) into unix milliseconds. */

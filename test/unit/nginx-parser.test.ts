@@ -19,6 +19,16 @@ describe('parseTimeLocal', () => {
     expect(parseTimeLocal('10/Sep/2026:07:00:01 -0500')).toBe(Date.UTC(2026, 8, 10, 12, 0, 1));
   });
 
+  it('accepts short offsets as written by nginx (+300 = +03:00) and other forms', () => {
+    const noon = Date.UTC(2026, 8, 8, 9, 37, 35);
+    expect(parseTimeLocal('08/Sep/2026:12:37:35 +300')).toBe(noon);
+    expect(parseTimeLocal('08/Sep/2026:12:37:35 +0300')).toBe(noon);
+    expect(parseTimeLocal('08/Sep/2026:12:37:35 +03:00')).toBe(noon);
+    expect(parseTimeLocal('08/Sep/2026:12:37:35 +3')).toBe(noon);
+    expect(parseTimeLocal('08/Sep/2026:12:37:35 -530')).toBe(Date.UTC(2026, 8, 8, 18, 7, 35));
+    expect(parseTimeLocal('08/Sep/2026:09:37:35 Z')).toBe(noon);
+  });
+
   it('accepts missing offset and rejects garbage', () => {
     expect(parseTimeLocal('01/Jan/2026:00:00:00')).toBe(Date.UTC(2026, 0, 1));
     expect(parseTimeLocal('2026-09-10T12:00:01Z')).toBeNull();
@@ -76,6 +86,20 @@ describe('createParser', () => {
       status: 200,
       timestamp: Date.UTC(2026, 8, 10, 12, 0, 1),
       userAgent: 'Mozilla/5.0 (bench)',
+    });
+  });
+
+  it('parses a production line with HTTP/2 and a short offset', () => {
+    const parser = createParser(DEFAULT_FORMAT);
+    const entry = parser.parse(
+      '107.149.122.66 - - [08/Sep/2026:12:37:35 +300] "GET /getAddressHistory/0x248e4bbffac438dcbf65bfe920fda5ced401dc2c?apiKey=EK-rkL1s-9GCSWWA-hdhLb&type=transfer&limit=50 HTTP/2" 200 2866 "-" "python-requests/2.34.2"',
+    );
+    expect(entry).toEqual({
+      method: 'GET',
+      path: '/getAddressHistory/0x248e4bbffac438dcbf65bfe920fda5ced401dc2c?apiKey=EK-rkL1s-9GCSWWA-hdhLb&type=transfer&limit=50',
+      status: 200,
+      timestamp: Date.UTC(2026, 8, 8, 9, 37, 35),
+      userAgent: 'python-requests/2.34.2',
     });
   });
 
