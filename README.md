@@ -201,8 +201,9 @@ job DSL (`terraform/modules/jenkins/jobs/root/scripts/`):
 - `scripts/nginx-logs-replay` — log timeline, parameter `RATIO`;
 - `scripts/nginx-logs-rate` — fixed rate, parameters `RPS` and `DURATION`.
 
-Both take `FILE` (log upload, plain or `.gz`; empty = smoke run on
-`examples/access.log`), `PREFIX`, `VUS`, `QUERY_PARAMS` (default
+Both take `FILE` (log upload, plain or `.gz`; empty = the last log uploaded on
+that agent is reused, or the `examples/access.log` smoke sample if there is
+none), `PREFIX`, `VUS`, `QUERY_PARAMS` (default
 `debugId=clickhouse&noJokes=please`) and extra `-e` options in `EXTRA_ENV`.
 The cache buster and `DEBUG_TIME_UNIT=s` are always on. The pipeline builds the Docker image, runs `discover.ts`, then
 `replay.ts`, and archives `summary.json`, `report.html`, `debug-schema.json`.

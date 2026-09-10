@@ -14,6 +14,9 @@ pipeline {
     environment {
         IMAGE = "nginx-logs-replay:${env.BUILD_NUMBER}"
         WORK = "${env.WORKSPACE}/work"
+        // Last uploaded log, kept outside the workspace (survives cleanWs) and shared by both jobs
+        // on this agent. One file only, so the footprint is bounded to a single gzipped log.
+        CACHE = "${env.WORKSPACE}/../../.nginx-logs-cache"
         CONTAINER = "nginx-logs-replay-${env.JOB_BASE_NAME}-${env.BUILD_NUMBER}"
     }
     stages {
@@ -42,7 +45,7 @@ pipeline {
         }
         stage('Prepare log') {
             steps {
-                sh 'rm -rf "$WORK" && mkdir -p "$WORK" && chmod 777 "$WORK"'
+                sh 'rm -rf "$WORK" && mkdir -p "$WORK" "$CACHE" && chmod 777 "$WORK"'
                 script {
                     def uploaded = false
                     try {
@@ -52,15 +55,27 @@ pipeline {
                         echo 'No FILE parameter uploaded'
                     }
                     if (uploaded) {
+                        // Store the upload (gzipped) as the agent's last log, then unpack it for this run.
                         if (env.FILE_FILENAME.endsWith('.gz')) {
-                            sh 'gunzip -c FILE > "$WORK/access.log"'
+                            sh 'cp FILE "$CACHE/last.log.gz"'
                         } else {
-                            sh 'mv FILE "$WORK/access.log"'
+                            sh 'gzip -c FILE > "$CACHE/last.log.gz"'
                         }
+                        sh 'printf "%s\n" "$FILE_FILENAME" "$JOB_BASE_NAME #$BUILD_NUMBER" "$(date -u +%FT%TZ)" > "$CACHE/last.meta"'
+                        sh 'rm -f FILE && gunzip -c "$CACHE/last.log.gz" > "$WORK/access.log"'
+                        env.LOG_NAME = env.FILE_FILENAME
+                    } else if (fileExists("${env.CACHE}/last.log.gz")) {
+                        def meta = readFile("${env.CACHE}/last.meta").trim().split('\n')
+                        echo "No FILE uploaded: reusing ${meta[0]} (uploaded by ${meta[1]} at ${meta[2]}) from the agent cache"
+                        sh 'gunzip -c "$CACHE/last.log.gz" > "$WORK/access.log"'
+                        env.LOG_NAME = "${meta[0]} (cached from ${meta[1]})"
                     } else {
-                        echo 'Using examples/access.log (smoke run)'
+                        echo 'No FILE uploaded and nothing cached on this agent: using examples/access.log (smoke run)'
                         sh 'cp examples/access.log "$WORK/access.log"'
+                        env.LOG_NAME = 'examples/access.log (smoke)'
                     }
+                    def load = env.MODE == 'rate' ? "${env.RPS} rps for ${env.DURATION}" : "x${env.RATIO}"
+                    currentBuild.description = "${env.LOG_NAME} · ${load}"
                 }
                 sh 'wc -l "$WORK/access.log"'
             }
