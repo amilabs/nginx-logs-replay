@@ -155,10 +155,10 @@ ${barChart(rows, { labelWidth: 80 })}
 }
 
 function renderCapacity(cap: CapacitySection): string {
-  const cls = cap.degradedFromRps === null ? 'good' : 'knee';
+  const cls = cap.capped ? 'knee' : 'good';
   const headline =
     cap.nextRatio !== null
-      ? `Suggested next run: RATIO=${cap.nextRatio}${cap.safeRatio !== null && cap.degradedFromRps !== null ? ` (estimated no-degradation level: x${cap.safeRatio})` : ''}`
+      ? `Suggested next run: RATIO=${cap.nextRatio}${cap.kneeRatio !== null ? ` · latency starts climbing at ~x${cap.kneeRatio}` : ''}`
       : 'Suggested next run';
   const verdict = `<div class="verdict ${cls}"><b>${escapeHtml(headline)}</b>${escapeHtml(cap.verdict)}</div>`;
   if (cap.rows.length === 0) return `<h2>Load vs latency</h2>${verdict}`;
