@@ -95,12 +95,14 @@ pipeline {
                 // gracefully (SIGTERM => k6 writes the summary) in the post block.
                 sh '''
                     docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
+                    cp "$CACHE/history.json" "$WORK/history.json" 2>/dev/null || true
                     docker run -d --name "$CONTAINER" --network=host -v "$WORK:/work" \
                         -e K6_WEB_DASHBOARD=true -e K6_WEB_DASHBOARD_EXPORT=/work/k6-dashboard.html -e K6_WEB_DASHBOARD_PERIOD=1s \
                         "$IMAGE" \
                         -e PREFIX="$PREFIX" -e MODE="$MODE" -e RATIO="$RATIO" -e RPS="$RPS" \
                         -e DURATION="$DURATION" -e VUS="$VUS" -e QUERY_PARAMS="$QUERY_PARAMS" -e SKIP_STATUSES="$SKIP_STATUSES" \
-                        -e CACHE_BUSTER=cb -e DEBUG_TIME_UNIT=s -e DASHBOARD_HREF=k6-dashboard.html -e NO_COLOR=1 $EXTRA_ENV \
+                        -e CACHE_BUSTER=cb -e DEBUG_TIME_UNIT=s -e DASHBOARD_HREF=k6-dashboard.html -e NO_COLOR=1 \
+                        -e HISTORY=/work/history.json -e RUN_LABEL="$JOB_BASE_NAME #$BUILD_NUMBER" $EXTRA_ENV \
                         /app/src/replay.ts >/dev/null
                     docker logs -f "$CONTAINER"
                     exit "$(docker wait "$CONTAINER")"
@@ -119,6 +121,8 @@ pipeline {
                     docker logs --tail 150 "$CONTAINER" 2>&1 || true
                 fi
                 docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
+                # Keep the run history next to the cached log so the next run can bisect towards the fastest RATIO.
+                if [ -s "$WORK/history.json" ]; then cp "$WORK/history.json" "$CACHE/history.json"; fi
             '''
             // k6 skips the dashboard export for runs shorter than 3s: leave an explanation instead of a broken link.
             sh '''
@@ -126,7 +130,7 @@ pipeline {
                     printf '%s' '<!DOCTYPE html><html><body style="font-family:sans-serif;padding:24px"><h2>No time series for this run</h2><p>k6 only exports the dashboard (rps, latency, VUs, component metrics over time) when the run lasts longer than 3 seconds. This run was shorter: use a bigger log, a lower RATIO or a longer DURATION. The aggregated report is in <a href="summary.html">summary.html</a>.</p></body></html>' > "$WORK/k6-dashboard.html"
                 fi
             '''
-            archiveArtifacts artifacts: 'work/summary.json, work/summary.html, work/k6-dashboard.html, work/debug-schema.json', allowEmptyArchive: true
+            archiveArtifacts artifacts: 'work/summary.json, work/summary.html, work/k6-dashboard.html, work/debug-schema.json, work/history.json', allowEmptyArchive: true
             script {
                 if (fileExists('work/summary.html')) {
                     publishHTML([

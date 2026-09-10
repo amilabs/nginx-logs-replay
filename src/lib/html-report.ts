@@ -5,6 +5,7 @@
 
 import { fmtBytes, fmtDuration, fmtMs, fmtNum, fmtPct } from './format.ts';
 import { barChart, escapeHtml, type BarRow } from './html-charts.ts';
+import { isCapped } from './history.ts';
 import { capacityWarning, type CapacitySection, type ComponentRow, type EndpointRow, type HeaderSection, type HttpSection, type Percentiles, type Report } from './summary.ts';
 
 export interface HtmlReportOptions {
@@ -154,8 +155,31 @@ ${barChart(rows, { labelWidth: 80 })}
 </tbody></table>`;
 }
 
+function renderRuns(cap: CapacitySection): string {
+  if (cap.runs.length === 0) return '';
+  const bars: BarRow[] = cap.runs.map((r) => ({
+    label: `x${r.ratio}`,
+    value: r.durationMs,
+    overlay: Math.min(r.plannedMs, r.durationMs),
+    text: `${fmtDuration(r.durationMs)} (planned ${fmtDuration(r.plannedMs)}) · ${fmtNum(r.achievedRps, 1)} rps${isCapped(r) ? ' · overran' : r.ratio === cap.bestRatio ? ' · fastest' : ''}`,
+    alert: isCapped(r),
+  }));
+  const rows = cap.runs
+    .map(
+      (r) =>
+        `<tr><td>x${r.ratio}</td><td>${fmtDuration(r.plannedMs)}</td><td>${fmtDuration(r.durationMs)}</td><td>${fmtNum(r.achievedRps, 1)}</td><td>${fmtMs(r.p95Ms)}</td><td>${r.failed}</td><td class="${isCapped(r) ? 'warn' : r.ratio === cap.bestRatio ? 'ok' : ''}">${isCapped(r) ? 'overran' : r.ratio === cap.bestRatio ? 'fastest' : ''}</td><td>${escapeHtml(r.at.slice(0, 16).replace('T', ' '))}</td></tr>`,
+    )
+    .join('\n');
+  return `<h2>Run time by RATIO <small>(earlier runs of this log against this target; bar = run time, dark = planned)</small></h2>
+<div class="legend"><i style="background:#60a5fa"></i>run time <i style="background:#1d4ed8"></i>planned <i style="background:#ef4444"></i>overran the plan</div>
+${barChart(bars, { labelWidth: 80, valueWidth: 330 })}
+<table><thead><tr><th>ratio</th><th>planned</th><th>took</th><th>rps</th><th>p95</th><th>failed</th><th></th><th>when</th></tr></thead><tbody>
+${rows}
+</tbody></table>`;
+}
+
 function renderCapacity(cap: CapacitySection): string {
-  const cls = cap.capped ? 'knee' : 'good';
+  const cls = cap.converged ? 'good' : cap.capped ? 'knee' : 'good';
   const headline =
     cap.nextRatio !== null
       ? `Suggested next run: RATIO=${cap.nextRatio}${cap.kneeRatio !== null ? ` · latency starts climbing at ~x${cap.kneeRatio}` : ''}`
@@ -262,6 +286,7 @@ ${renderCards(h, report.http, capacityWarning(report))}
 ${renderRun(h, report.http)}
 ${renderMismatches(report.http)}
 ${renderCapacity(report.capacity)}
+${renderRuns(report.capacity)}
 ${renderLatency(report.http)}
 ${renderComponents(report)}
 ${renderEndpoints(report.endpoints, top)}

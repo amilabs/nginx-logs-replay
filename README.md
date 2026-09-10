@@ -84,6 +84,8 @@ k6 run -o experimental-prometheus-rw --tag testid=eth3-$(date +%s) -e PREFIX=...
 | `TOP` | `15` | endpoints shown in the summary |
 | `SUMMARY_JSON` | `./summary.json` | machine-readable summary |
 | `SUMMARY_HTML` | `./summary.html` | HTML report (inline CSS/SVG, no JS); empty disables |
+| `HISTORY` | | JSON file with earlier runs (read at start, this run appended at the end); enables the RATIO bisection across runs |
+| `RUN_LABEL` | | free-text label stored with the run in HISTORY (Jenkins passes the build name) |
 | `DASHBOARD_HREF` | | link to the k6 dashboard export shown in the HTML report |
 | `NO_COLOR` | | disable ANSI colors |
 
@@ -113,8 +115,18 @@ only 5xx and transport errors count as failed.
 The goal is the RATIO at which the whole log replays fastest. While the target
 keeps up, the run finishes on schedule (`log span / RATIO`) and RATIO can go
 up. Once the target caps, requests queue, the run overruns its plan and the
-achieved rps stops growing; a higher RATIO only makes latency worse. The
-summary therefore compares the actual run time with the plan:
+achieved rps stops growing; a higher RATIO only makes latency worse.
+
+With `HISTORY` set (the Jenkins jobs keep it next to the cached log), every
+replay of the same log / target / query setup is recorded and the report
+bisects: the fastest on-schedule ratio is the lower bound, the lowest ratio
+that overran its plan is the upper bound, the suggestion is their geometric
+mean, and once they are within 15% the report declares the optimum. Throughput
+measured under overload is deliberately not used as a capacity estimate: with
+queues and timeouts it is lower than what the target sustains just below the
+cap (e.g. 242 rps at x101 vs 286 rps at x67.5 on the same log).
+
+Without history the summary falls back to the single-run rule:
 
 - on schedule (overrun ≤ 10%, median lag < 1s): `Suggested next run: RATIO × 1.5`;
 - on schedule but bursts already queue (median lag ≥ 1s): `RATIO × 1.2`;

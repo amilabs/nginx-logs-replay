@@ -56,7 +56,8 @@ async function main() {
   const schemaPath = path.join(work, 'debug-schema.json');
   const summaryPath = path.join(work, 'summary.json');
   const htmlPath = path.join(work, 'summary.html');
-  const common = { PREFIX: prefix, LOG, DEBUG_SCHEMA: schemaPath, SUMMARY_JSON: summaryPath, SUMMARY_HTML: htmlPath, NO_COLOR: '1' };
+  const historyPath = path.join(work, 'history.json');
+  const common = { PREFIX: prefix, LOG, DEBUG_SCHEMA: schemaPath, SUMMARY_JSON: summaryPath, SUMMARY_HTML: htmlPath, HISTORY: historyPath, RUN_LABEL: 'e2e', NO_COLOR: '1' };
   try {
     console.log('e2e: discover');
     runK6(k6, path.join(root, 'src', 'discover.ts'), { ...common, DISCOVER_N: '3' }, root);
@@ -104,6 +105,18 @@ async function main() {
     assert.ok(received.every((r) => !r.url.includes('apiKey=freekey')), 'apiKey overridden');
     assert.ok(received.some((r) => r.ua === 'curl/8.0'), 'user agent replayed from log');
     assert.ok(received.some((r) => r.method === 'POST'), 'method replayed from log');
+
+    const history1 = JSON.parse(readFileSync(historyPath, 'utf8'));
+    assert.equal(history1.length, 1, 'first replay recorded in history');
+    assert.equal(history1[0].ratio, 5);
+    assert.equal(history1[0].label, 'e2e');
+
+    console.log('e2e: replay again (history)');
+    runK6(k6, path.join(root, 'src', 'replay.ts'), { ...common, RATIO: '8', VUS: '5', CACHE_BUSTER: 'cb', QUERY_PARAMS: 'apiKey=e2e' }, root);
+    const second = JSON.parse(readFileSync(summaryPath, 'utf8'));
+    assert.equal(JSON.parse(readFileSync(historyPath, 'utf8')).length, 2, 'second replay appended');
+    assert.deepEqual(second.report.capacity.runs.map((r) => r.ratio), [5, 8], 'same-key runs listed');
+    assert.ok(second.report.capacity.verdict.includes('Fastest full replay so far'), 'history-based verdict');
 
     console.log('e2e: skip statuses');
     runK6(k6, path.join(root, 'src', 'replay.ts'), { ...common, RATIO: '10', SKIP_STATUSES: '404,500' }, root);

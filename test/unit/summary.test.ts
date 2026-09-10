@@ -142,6 +142,25 @@ describe('buildReport', () => {
     expect(capped.capacity.verdict).toContain('At x2 the target capped at ~10 rps: the full replay took 20.0s, 8.0s longer than the planned 12.0s');
   });
 
+  it('prefers the run history bisection over the single-run rule', () => {
+    const key = 'k';
+    const hist = (ratio: number, durationMs: number, plannedMs: number, achievedRps: number) => ({
+      key, at: '2026-09-10T05:00:00Z', ratio, plannedMs, durationMs, achievedRps, requests: 100, failed: 0, lagP50Ms: 0, p95Ms: 300,
+    });
+    const withHistory = buildReport(data, { ...ctx, history: [hist(45, 80_000, 80_000, 190), hist(67.5, 53_500, 53_300, 286), hist(101.3, 63_000, 35_500, 242)], historyKey: key });
+    expect(withHistory.capacity.runs.map((r) => r.ratio)).toEqual([45, 67.5, 101.3]);
+    expect(withHistory.capacity).toMatchObject({ bestRatio: 67.5, cappedRatio: 101.3, nextRatio: 82.7, converged: false });
+    expect(withHistory.capacity.verdict).toContain('Suggested next run: RATIO=82.7 (between the two)');
+    expect(withHistory.capacity.verdict).toContain('Latency starts climbing at ~x1.');
+    const text = renderReport(withHistory, 15, false);
+    expect(text).toContain('RUN TIME BY RATIO');
+    expect(text).toMatch(/x67\.5\s+53\.3s\s+53\.5s\s+286\s+300ms\s+0\s+fastest/);
+    expect(text).toMatch(/x101\.3\s+35\.5s\s+1m 03s\s+242\s+300ms\s+0\s+overran/);
+    const single = buildReport(data, { ...ctx, history: [hist(2, 12_000, 12_000, 10)], historyKey: key });
+    expect(single.capacity.runs).toHaveLength(1);
+    expect(single.capacity.verdict).toContain('On schedule at x2');
+  });
+
   it('reports debug health', () => {
     expect(report.debug).toEqual({ enabled: true, missing: 2, unknownPaths: 0 });
   });

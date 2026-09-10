@@ -14,18 +14,20 @@ import exec from 'k6/execution';
 import http from 'k6/http';
 import type { Options } from 'k6/options';
 import { parseConfig } from './lib/config.ts';
+import { appendHistory, historyKey, type HistoryRun } from './lib/history.ts';
 import { renderHtmlReport } from './lib/html-report.ts';
 import { buildLoadPlan, buildOptions } from './lib/options.ts';
 import { poolStatuses, topEndpoints } from './lib/request-pool.ts';
 import { poolIndex, targetTime } from './lib/schedule.ts';
 import { buildReport, renderReport, type K6SummaryData } from './lib/summary.ts';
 import { declareDebugMetrics, replayLag } from './k6/metrics.ts';
-import { loadSchema, poolTimestamps, sharedOnce, sharedPool } from './k6/pool.ts';
+import { loadHistory, loadSchema, poolTimestamps, sharedOnce, sharedPool } from './k6/pool.ts';
 import { createRequestContext, performRequest } from './k6/request.ts';
 
 const config = parseConfig(__ENV);
 const { pool, meta } = sharedPool(config);
 const schema = loadSchema(config);
+const history = loadHistory(config);
 // Derived from the whole pool: computed once and shared, not per VU (see sharedOnce).
 const derived = sharedOnce('plan', () => ({
   load: buildLoadPlan({ config, timestamps: poolTimestamps(pool), probeLatencyMs: schema?.probeAvgMs ?? null }),
@@ -93,7 +95,36 @@ export default function (): void {
   performRequest(requestContext, entry, nonce, { load: loadBucket });
 }
 
+function currentRun(data: K6SummaryData, key: string): HistoryRun {
+  const metric = (name: string, value: string): number => data.metrics[name]?.values[value] ?? 0;
+  return {
+    key,
+    at: new Date().toISOString(),
+    ratio: config.ratio,
+    plannedMs: load.plannedMs ?? 0,
+    durationMs: data.state?.testRunDurationMs ?? 0,
+    achievedRps: metric('http_reqs', 'rate'),
+    requests: metric('http_reqs', 'count'),
+    failed: metric('http_req_failed', 'passes'),
+    lagP50Ms: metric('replay_lag_ms', 'med'),
+    p95Ms: metric('http_req_duration', 'p(95)'),
+    label: __ENV.RUN_LABEL,
+  };
+}
+
 export function handleSummary(data: K6SummaryData): Record<string, string> {
+  const key = historyKey({
+    prefix: config.prefix,
+    mode: config.mode,
+    poolKept: meta.stats.kept,
+    firstTs: meta.stats.firstTs,
+    lastTs: meta.stats.lastTs,
+    queryParams: config.queryParams,
+    skipStatuses: config.skipStatuses,
+    filterOnly: config.filterOnly,
+    filterSkip: config.filterSkip,
+  });
+  const updatedHistory = config.mode === 'replay' ? appendHistory(history, currentRun(data, key)) : [...history];
   const report = buildReport(data, {
     config,
     schema,
@@ -103,6 +134,8 @@ export function handleSummary(data: K6SummaryData): Record<string, string> {
     targetRps: load.peakRps,
     plannedMs: load.plannedMs,
     probeAvgMs: schema?.probeAvgMs ?? null,
+    history: updatedHistory,
+    historyKey: key,
   });
   const outputs: Record<string, string> = {
     stdout: renderReport(report, config.top, config.colors),
@@ -113,5 +146,6 @@ export function handleSummary(data: K6SummaryData): Record<string, string> {
       dashboardHref: config.dashboardHref || undefined,
     });
   }
+  if (config.history && config.mode === 'replay') outputs[config.history] = `${JSON.stringify(updatedHistory, null, 1)}\n`;
   return outputs;
 }
