@@ -6,7 +6,6 @@
  * RATIO for the next run. Pure.
  */
 
-import { fmtDuration, fmtMs } from './format.ts';
 import type { Percentiles } from './summary.ts';
 
 export const LOAD_BUCKETS = 8;
@@ -105,12 +104,12 @@ export function analyzeCapacity(rows: readonly LoadRow[], probeAvgMs: number | n
 
 export interface Recommendation {
   readonly verdict: string;
+  /** True when the whole run was over the limit (timeline lag / drops), so the knee is only a lower bound. */
+  readonly saturated: boolean;
   /** RATIO to run next (replay), rounded to one decimal. */
   readonly nextRatio: number | null;
-  /** RATIO at which latency starts climbing (informational), if a knee was found. */
-  readonly kneeRatio: number | null;
-  /** True when the target capped the run (it overran its plan or dropped requests). */
-  readonly capped: boolean;
+  /** Highest RATIO with no degradation observed in this run, if a knee was found. */
+  readonly safeRatio: number | null;
 }
 
 function round1(value: number): number {
@@ -119,7 +118,7 @@ function round1(value: number): number {
 
 /** Rate mode: one bucket; compare with the discover probe (or the run's own p50 when unknown). */
 export function recommendRps(row: LoadRow | undefined, rps: number, probeAvgMs: number | null): Recommendation {
-  if (!row || row.count === 0) return { verdict: 'Not enough data to judge this rate.', nextRatio: null, kneeRatio: null, capped: false };
+  if (!row || row.count === 0) return { verdict: 'Not enough data to judge this rate.', nextRatio: null, safeRatio: null, saturated: false };
   const reference = probeAvgMs !== null && probeAvgMs > 0 ? probeAvgMs : row.duration.p50;
   const degraded = isDegraded(row, reference);
   const ref = Math.round(reference);
@@ -128,89 +127,64 @@ export function recommendRps(row: LoadRow | undefined, rps: number, probeAvgMs: 
     return {
       verdict: `Degraded at ${rps} rps: p95 ${Math.round(row.duration.p95)}ms vs ${ref}ms baseline${row.failedRate > FAIL_LIMIT ? `, ${(row.failedRate * 100).toFixed(1)}% failed` : ''}. Try RPS=${next}.`,
       nextRatio: null,
-      kneeRatio: null,
-      capped: true,
+      safeRatio: null,
+      saturated: true,
     };
   }
   const next = Math.round(rps * 1.5);
   return {
     verdict: `No degradation at ${rps} rps (p95 ${Math.round(row.duration.p95)}ms vs ${ref}ms baseline). Try RPS=${next} to look for the limit.`,
     nextRatio: null,
-    kneeRatio: null,
-    capped: false,
+    safeRatio: null,
+    saturated: false,
   };
 }
 
-export interface FastestInput {
-  readonly ratio: number;
-  /** Average rps of the log at ratio 1. */
-  readonly originalAvgRps: number;
-  /** Busiest second of the log at ratio 1. */
-  readonly originalPeakRps: number;
-  readonly achievedRps: number;
-  readonly plannedMs: number | null;
-  readonly durationMs: number;
-  readonly lagP50: number | null;
-  readonly dropped: number;
-  readonly knee: CapacityAnalysis;
-}
-
-/** A run is capped when it overran its plan by more than this share. */
-const OVERRUN_SHARE = 0.1;
-/** ...and by at least this much, so setup/teardown overhead on tiny runs does not count. */
-const OVERRUN_MIN_MS = 5000;
-const CAP_MARGIN = 0.95;
-
-function kneeNote(knee: CapacityAnalysis, originalPeakRps: number): { text: string; kneeRatio: number | null } {
-  if (knee.healthyUpToRps !== null && knee.degradedFromRps !== null && originalPeakRps > 0) {
-    const kneeRatio = round1(Math.max(0.1, knee.healthyUpToRps / originalPeakRps));
-    return {
-      kneeRatio,
-      text: ` Latency starts climbing around ~${knee.degradedFromRps} rps (~x${kneeRatio}): past that requests get slower, but the full replay still finishes sooner until the throughput cap.`,
-    };
-  }
-  if (knee.rows.length > 0 && knee.degradedFromRps === null) return { kneeRatio: null, text: ' Latency stayed flat across all load levels of this run.' };
-  return { kneeRatio: null, text: '' };
-}
-
 /**
- * Fastest-full-replay criterion: raise RATIO while the run still finishes on
- * schedule; once the target caps, the run overruns its plan and the achieved
- * rps stops growing. The best RATIO is then cap ÷ average log rps.
+ * Turns the knee into advice for the next replay. `originalPeakRps` is the
+ * busiest second of the log at ratio 1; `ratio` is this run's ratio;
+ * `saturated` says the run as a whole was over the limit (timeline lag or
+ * dropped requests), in which case quiet seconds still carry backlog and the
+ * knee is only a lower bound, so the next step is a plain cut.
  */
-export function recommendFastest(input: FastestInput): Recommendation {
-  const { ratio, originalAvgRps, achievedRps, plannedMs, durationMs, dropped } = input;
-  const note = kneeNote(input.knee, input.originalPeakRps);
-  if (plannedMs === null || plannedMs <= 0 || durationMs <= 0 || originalAvgRps <= 0) {
-    return { verdict: `Not enough data to judge the run time.${note.text}`, nextRatio: null, kneeRatio: note.kneeRatio, capped: false };
+export function recommendRatio(analysis: CapacityAnalysis, ratio: number, originalPeakRps: number, saturated = false): Recommendation {
+  if (analysis.referenceP95 === null || analysis.rows.length === 0 || originalPeakRps <= 0) {
+    return { verdict: 'Not enough data to locate the degradation point.', nextRatio: null, safeRatio: null, saturated };
   }
-  const overrunMs = durationMs - plannedMs;
-  const lagP50 = input.lagP50 ?? 0;
-  if ((overrunMs > OVERRUN_MIN_MS && overrunMs / plannedMs > OVERRUN_SHARE) || dropped > 0) {
-    let best = round1(Math.max(0.1, (achievedRps / originalAvgRps) * CAP_MARGIN));
-    if (best >= ratio) best = round1(Math.max(0.1, ratio * 0.8));
-    const drops = dropped > 0 ? ` and ${dropped} requests were never sent` : '';
+  const ref = Math.round(analysis.referenceP95);
+  if (analysis.degradedFromRps === null) {
+    const next = round1(ratio * 1.5);
     return {
-      verdict: `At x${ratio} the target capped at ~${round1(achievedRps)} rps: the full replay took ${fmtDuration(durationMs)}, ${fmtDuration(Math.max(0, overrunMs))} longer than the planned ${fmtDuration(plannedMs)}${drops}. Fastest full replay ≈ RATIO x${best} (${round1(achievedRps)} rps ÷ ${round1(originalAvgRps)} rps average of the log, minus 5%). Suggested next run: RATIO=${best}.${note.text}`,
-      nextRatio: best,
-      kneeRatio: note.kneeRatio,
-      capped: true,
-    };
-  }
-  if (lagP50 > 1000) {
-    const next = round1(ratio * 1.2);
-    return {
-      verdict: `On schedule at x${ratio} (${fmtDuration(durationMs)} vs planned ${fmtDuration(plannedMs)}) but requests already queue during bursts (median lag ${fmtMs(lagP50)}): the throughput cap is close. Suggested next run: RATIO=${next} (×1.2).${note.text}`,
+      verdict: `No degradation up to the busiest second of this run (p95 stayed within 2× the ${ref}ms reference). Suggested next run: RATIO=${next} to look for the limit.`,
       nextRatio: next,
-      kneeRatio: note.kneeRatio,
-      capped: false,
+      safeRatio: ratio,
+      saturated,
     };
   }
-  const next = round1(ratio * 1.5);
+  if (analysis.healthyUpToRps === null) {
+    const next = round1(Math.max(0.1, ratio / 2));
+    return {
+      verdict: `Latency was already elevated at the lowest well-populated load of this run (≤ ${analysis.degradedFromRps} rps, p95 > 2× the ${ref}ms reference). Suggested next run: RATIO=${next}.`,
+      nextRatio: next,
+      safeRatio: null,
+      saturated,
+    };
+  }
+  const safe = round1(Math.max(0.1, analysis.healthyUpToRps / originalPeakRps));
+  const knee = `Latency stays flat up to ~${analysis.healthyUpToRps} rps and starts to climb around ~${analysis.degradedFromRps} rps (p95 > 2× the ${ref}ms reference). The log peaks at ${round1(originalPeakRps)} rps, so the estimated no-degradation level is RATIO x${safe}.`;
+  if (saturated) {
+    const next = round1(Math.max(safe, ratio * 0.6));
+    return {
+      verdict: `${knee} This run was over the limit as a whole (requests fired late or were dropped), so quiet seconds still carried backlog and x${safe} is a lower bound. Suggested next run: RATIO=${next}.`,
+      nextRatio: next,
+      safeRatio: safe,
+      saturated,
+    };
+  }
   return {
-    verdict: `On schedule at x${ratio}: the full replay took ${fmtDuration(durationMs)} vs planned ${fmtDuration(plannedMs)} and the target kept up (median lag ${fmtMs(lagP50)}). Suggested next run: RATIO=${next} (×1.5) to look for the throughput cap.${note.text}`,
-    nextRatio: next,
-    kneeRatio: note.kneeRatio,
-    capped: false,
+    verdict: `${knee} Suggested next run: RATIO=${safe} to confirm.`,
+    nextRatio: safe,
+    safeRatio: safe,
+    saturated,
   };
 }

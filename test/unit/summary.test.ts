@@ -134,12 +134,9 @@ describe('buildReport', () => {
 
   it('finds the load knee and recommends the next ratio', () => {
     expect(report.capacity.rows.map((r) => r.upToRps)).toEqual([3, 6, 12]);
-    expect(report.capacity).toMatchObject({ referenceP95: 60, healthyUpToRps: 6, degradedFromRps: 12, nextRatio: 3, kneeRatio: 1, capped: false });
-    expect(report.capacity.verdict).toContain('On schedule at x2: the full replay took 12.0s vs planned 12.0s and the target kept up (median lag 5.00ms). Suggested next run: RATIO=3 (×1.5)');
-    expect(report.capacity.verdict).toContain('Latency starts climbing around ~12 rps (~x1)');
-    const capped = buildReport({ ...data, state: { testRunDurationMs: 20_000 } }, { ...ctx });
-    expect(capped.capacity.capped).toBe(true);
-    expect(capped.capacity.verdict).toContain('At x2 the target capped at ~10 rps: the full replay took 20.0s, 8.0s longer than the planned 12.0s');
+    expect(report.capacity).toMatchObject({ referenceP95: 60, healthyUpToRps: 6, degradedFromRps: 12, nextRatio: 1, safeRatio: 1 });
+    expect(report.capacity.verdict).toContain('Latency stays flat up to ~6 rps and starts to climb around ~12 rps');
+    expect(report.capacity.verdict).toContain('The log peaks at 6 rps, so the estimated no-degradation level is RATIO x1. Suggested next run: RATIO=1 to confirm');
   });
 
   it('reports debug health', () => {
@@ -235,7 +232,7 @@ describe('renderReport', () => {
     expect(text).toContain('schedule lag p95 20.0ms  max 60.0ms');
     expect(text).toContain('LOAD vs LATENCY');
     expect(text).toMatch(/12\s+30\s+0\.00%\s+250ms\s+900ms\s+1\.50s\s+2\.00s\s+climbing/);
-    expect(text).toContain('Suggested next run: RATIO=3');
+    expect(text).toContain('Suggested next run: RATIO=1');
     expect(text).toContain('COMPONENTS');
     expect(text).toMatch(/clickhouse\s+1\.00ms\s+30\.0ms\s+30\.0ms\s+90\.0ms\s+90\.0ms\s+200ms\s+700ms\s+120/);
     expect(text).toContain('2 responses without a debug block');

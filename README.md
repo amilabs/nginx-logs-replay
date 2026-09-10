@@ -108,27 +108,21 @@ limiter; replaying them hits the backend harder than production did, so use
 `SKIP_STATUSES=429,5xx` for a faithful load. 4xx are normal replayed answers;
 only 5xx and transport errors count as failed.
 
-## Finding the fastest RATIO
+## Finding the point of no degradation
 
-The goal is the RATIO at which the whole log replays fastest. While the target
-keeps up, the run finishes on schedule (`log span / RATIO`) and RATIO can go
-up. Once the target caps, requests queue, the run overruns its plan and the
-achieved rps stops growing; a higher RATIO only makes latency worse. The
-summary therefore compares the actual run time with the plan:
-
-- on schedule (overrun ≤ 10%, median lag < 1s): `Suggested next run: RATIO × 1.5`;
-- on schedule but bursts already queue (median lag ≥ 1s): `RATIO × 1.2`;
-- overran the plan by more than 10% or dropped requests: the target capped at
-  the achieved rps, and the fastest full replay is
-  `achieved rps ÷ average log rps × 0.95`, printed as the suggestion.
-
-As a secondary hint, every request is tagged with the load it was fired at
-(requests due in the same wall-clock second) and the summary shows latency by
-load in 8 buckets up to the busiest second (buckets need ≥100 requests and 2%
-of the run; "climbing" = p95 above 2× the best bucket + 200ms, or >1% failed).
-The point where latency starts climbing is reported as `~xN`: past it requests
-get slower, but the full replay still finishes sooner until the cap. Rate mode
-compares the run with the discover probe latency and suggests the next `RPS`.
+Every replayed request is tagged with the load it was fired at (requests due in
+the same wall-clock second, on the compressed timeline). The summary groups
+latency by that load in 8 buckets up to the busiest second; a bucket takes
+part only with at least 100 requests and 2% of the run. The reference is the
+best p95 among those buckets (capped at 3× the discover probe latency); a
+bucket is "climbing" when its p95 exceeds twice the reference + 200ms or more
+than 1% of its requests failed. The last flat bucket divided by the log's own
+peak rps is the estimated no-degradation `RATIO`, printed as
+`Suggested next run: RATIO=…`. When nothing climbs the report suggests
+`RATIO × 1.5`; when the whole run was over the limit (timeline lag, drops)
+the estimate is a lower bound and the suggestion is a 0.6× step down. Rate
+mode compares the run with the discover probe latency and suggests the next
+`RPS` instead.
 
 ## Component metrics (the "who is slow" table)
 

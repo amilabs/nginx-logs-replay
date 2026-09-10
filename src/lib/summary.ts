@@ -3,7 +3,7 @@
  * console text. The same model feeds html-report.ts. Pure.
  */
 
-import { analyzeCapacity, recommendFastest, recommendRps, type LoadRow } from './capacity.ts';
+import { analyzeCapacity, recommendRatio, recommendRps, type LoadRow } from './capacity.ts';
 import type { Config } from './config.ts';
 import type { DebugSchema } from './debug-walker.ts';
 import { fmtBytes, fmtDuration, fmtMs, fmtNum, fmtPct, palette, table } from './format.ts';
@@ -144,10 +144,8 @@ export interface CapacitySection {
   readonly verdict: string;
   /** RATIO for the next replay, when one can be recommended. */
   readonly nextRatio: number | null;
-  /** RATIO at which latency starts climbing (informational). */
-  readonly kneeRatio: number | null;
-  /** The target capped this run (overran the plan or dropped requests). */
-  readonly capped: boolean;
+  /** Highest RATIO without degradation seen in this run. */
+  readonly safeRatio: number | null;
 }
 
 export interface Report {
@@ -340,19 +338,10 @@ function loadRows(data: K6SummaryData): LoadRow[] {
 
 function buildCapacity(data: K6SummaryData, header: HeaderSection, http: HttpSection): CapacitySection {
   const analysis = analyzeCapacity(loadRows(data), header.probeAvgMs);
+  const saturated = (http.lagP95 !== null && http.lagP95 > 1000) || http.dropped > 0;
   const recommendation =
     header.mode === 'replay'
-      ? recommendFastest({
-          ratio: header.ratio,
-          originalAvgRps: header.originalRps,
-          originalPeakRps: header.ratio > 0 ? header.targetRps / header.ratio : 0,
-          achievedRps: header.achievedRps,
-          plannedMs: header.plannedMs,
-          durationMs: header.testDurationMs,
-          lagP50: http.lagP50,
-          dropped: http.dropped,
-          knee: analysis,
-        })
+      ? recommendRatio(analysis, header.ratio, header.ratio > 0 ? header.targetRps / header.ratio : 0, saturated)
       : recommendRps(analysis.rows[0], header.rps, header.probeAvgMs);
   return {
     rows: analysis.rows,
@@ -361,8 +350,7 @@ function buildCapacity(data: K6SummaryData, header: HeaderSection, http: HttpSec
     degradedFromRps: analysis.degradedFromRps,
     verdict: recommendation.verdict,
     nextRatio: recommendation.nextRatio,
-    kneeRatio: recommendation.kneeRatio,
-    capped: recommendation.capped,
+    safeRatio: recommendation.safeRatio,
   };
 }
 
@@ -488,7 +476,7 @@ function renderCapacity(cap: CapacitySection, colors: boolean): string {
     ]),
     ['right', 'right', 'right', 'right', 'right', 'right', 'right', 'left'],
   );
-  const verdict = cap.capped ? c.cyan(cap.verdict) : c.green(cap.verdict);
+  const verdict = cap.degradedFromRps === null ? c.green(cap.verdict) : c.cyan(cap.verdict);
   return [title, body, verdict].join('\n');
 }
 
