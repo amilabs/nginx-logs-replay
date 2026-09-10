@@ -136,7 +136,9 @@ If responses are JSON with a debug block like
 entry (`dbg_clickhouse_time`, `dbg_clickhouse_num`, `dbg_clickhouse_getTxs_time`,
 `dbg_memory_usage`, …), each tagged with `endpoint`. Rules:
 
-- object with `time` / `num` / `queries` → time, num, and time per query;
+- object with `time` / `num` / `queries` → time, num, and time per query
+  (`totalQueries` or the length of a `queries` array counts as `num` when `num`
+  is absent, so the raw Ethplorer profile is understood too);
 - object with `usage` → usage and peak;
 - other object → recurse (`mongo.read`);
 - bare number → time.

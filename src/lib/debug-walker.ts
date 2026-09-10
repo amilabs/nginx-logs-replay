@@ -1,7 +1,9 @@
 /**
  * Walks the `debug` block of a JSON response into metric samples and
  * discovers the metric schema. Rules are inherited from v1:
- *  - object with time/num/queries -> time, num, and time per queries.<name>
+ *  - object with time/num/queries -> time, num, and time per queries.<name>;
+ *    `totalQueries` (raw Ethplorer profile) or the length of a `queries`
+ *    array stand in for `num` when it is absent
  *  - object with usage            -> usage, peak
  *  - other object                 -> recurse with dotted prefix
  *  - number                       -> time
@@ -65,6 +67,14 @@ function walkQueries(queries: unknown, prefix: string, out: Sample[]): void {
   }
 }
 
+/** `num`, or the raw-profile equivalents: `totalQueries` or a `queries` array. */
+function queryCount(value: Dict): number | undefined {
+  if (isNumber(value.num)) return value.num;
+  if (isNumber(value.totalQueries)) return value.totalQueries;
+  if (Array.isArray(value.queries)) return value.queries.length;
+  return undefined;
+}
+
 function walkInto(obj: Dict, prefix: string, out: Sample[], depth: number): void {
   if (depth > MAX_DEPTH) return;
   for (const [field, value] of Object.entries(obj)) {
@@ -74,10 +84,11 @@ function walkInto(obj: Dict, prefix: string, out: Sample[], depth: number): void
       continue;
     }
     if (!isDict(value)) continue;
-    const hasTiming = 'time' in value || 'num' in value || 'queries' in value;
+    const hasTiming = 'time' in value || 'num' in value || 'totalQueries' in value || 'queries' in value;
     if (hasTiming) {
       if (isNumber(value.time)) out.push({ path, kind: 'time', value: value.time });
-      if (isNumber(value.num)) out.push({ path, kind: 'num', value: value.num });
+      const num = queryCount(value);
+      if (num !== undefined) out.push({ path, kind: 'num', value: num });
       walkQueries(value.queries, path, out);
       continue;
     }

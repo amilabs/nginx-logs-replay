@@ -45,6 +45,31 @@ describe('walkDebug', () => {
     ]);
   });
 
+  it('accepts the raw Ethplorer profile (totalQueries + queries array) and the flat service.php form', () => {
+    const raw = walkDebug({
+      totalTime: 0.2,
+      memUsage: { usage: 12.5, 'usage real': 14, peak: 20, 'peak real': 22 },
+      clickhouse: { dbConnected: true, totalQueries: 3, time: 0.1, queries: [{ time: 0.05 }, { time: 0.03 }, { time: 0.02 }, { time: 0 }] },
+      mongo: { dbConnected: true, time: 0.01, queries: [{ time: 0.01 }] },
+      redis: { read: { num: 2, time: 0.001, keys: ['a', 'b'] } },
+    });
+    expect(raw).toEqual([
+      { path: 'totalTime', kind: 'time', value: 0.2 },
+      { path: 'memUsage', kind: 'usage', value: 12.5 },
+      { path: 'memUsage', kind: 'peak', value: 20 },
+      { path: 'clickhouse', kind: 'time', value: 0.1 },
+      { path: 'clickhouse', kind: 'num', value: 3 },
+      { path: 'mongo', kind: 'time', value: 0.01 },
+      { path: 'mongo', kind: 'num', value: 1 },
+      { path: 'redis.read', kind: 'time', value: 0.001 },
+      { path: 'redis.read', kind: 'num', value: 2 },
+    ]);
+    expect(walkDebug({ php: 0.2, clickhouse: 0.1 })).toEqual([
+      { path: 'php', kind: 'time', value: 0.2 },
+      { path: 'clickhouse', kind: 'time', value: 0.1 },
+    ]);
+  });
+
   it('ignores non-objects', () => {
     expect(walkDebug(null)).toEqual([]);
     expect(walkDebug('x')).toEqual([]);
