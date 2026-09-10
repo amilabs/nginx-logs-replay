@@ -6,7 +6,6 @@
 import { analyzeCapacity, recommendFastest, recommendRps, type LoadRow } from './capacity.ts';
 import type { Config } from './config.ts';
 import type { DebugSchema } from './debug-walker.ts';
-import { isCapped, recommendFromHistory, type HistoryRun } from './history.ts';
 import { fmtBytes, fmtDuration, fmtMs, fmtNum, fmtPct, palette, table } from './format.ts';
 import type { PoolStats } from './request-pool.ts';
 import type { VuAllocation } from './schedule.ts';
@@ -38,9 +37,6 @@ export interface ReportContext {
   readonly probeAvgMs?: number | null;
   /** Wall-clock end of the run; defaults to now. */
   readonly finishedAt?: Date;
-  /** Earlier runs (this run already appended) and the key identifying this log/target setup. */
-  readonly history?: readonly HistoryRun[];
-  readonly historyKey?: string;
 }
 
 /** Latency distribution in ms. */
@@ -152,12 +148,6 @@ export interface CapacitySection {
   readonly kneeRatio: number | null;
   /** The target capped this run (overran the plan or dropped requests). */
   readonly capped: boolean;
-  /** Earlier runs of the same log/target (latest per ratio, ascending); empty without HISTORY. */
-  readonly runs: readonly HistoryRun[];
-  /** Fastest on-schedule ratio in the history and the lowest overrunning one above it. */
-  readonly bestRatio: number | null;
-  readonly cappedRatio: number | null;
-  readonly converged: boolean;
 }
 
 export interface Report {
@@ -348,11 +338,9 @@ function loadRows(data: K6SummaryData): LoadRow[] {
   return rows.sort((a, b) => a.upToRps - b.upToRps);
 }
 
-function buildCapacity(data: K6SummaryData, header: HeaderSection, http: HttpSection, ctx: ReportContext): CapacitySection {
+function buildCapacity(data: K6SummaryData, header: HeaderSection, http: HttpSection): CapacitySection {
   const analysis = analyzeCapacity(loadRows(data), header.probeAvgMs);
-  const fromHistory =
-    header.mode === 'replay' && ctx.history && ctx.historyKey ? recommendFromHistory(ctx.history, ctx.historyKey) : null;
-  const single =
+  const recommendation =
     header.mode === 'replay'
       ? recommendFastest({
           ratio: header.ratio,
@@ -366,22 +354,15 @@ function buildCapacity(data: K6SummaryData, header: HeaderSection, http: HttpSec
           knee: analysis,
         })
       : recommendRps(analysis.rows[0], header.rps, header.probeAvgMs);
-  // With two or more runs of this log the bisection over the history beats any single-run estimate.
-  const useHistory = fromHistory !== null && fromHistory.series.length >= 2;
-  const kneeText = single.kneeRatio !== null ? ` Latency starts climbing at ~x${single.kneeRatio}.` : '';
   return {
     rows: analysis.rows,
     referenceP95: analysis.referenceP95,
     healthyUpToRps: analysis.healthyUpToRps,
     degradedFromRps: analysis.degradedFromRps,
-    verdict: useHistory ? `${fromHistory.verdict}${kneeText}` : single.verdict,
-    nextRatio: useHistory ? fromHistory.nextRatio : single.nextRatio,
-    kneeRatio: single.kneeRatio,
-    capped: single.capped,
-    runs: fromHistory?.series ?? [],
-    bestRatio: fromHistory?.bestRatio ?? null,
-    cappedRatio: fromHistory?.cappedRatio ?? null,
-    converged: fromHistory?.converged ?? false,
+    verdict: recommendation.verdict,
+    nextRatio: recommendation.nextRatio,
+    kneeRatio: recommendation.kneeRatio,
+    capped: recommendation.capped,
   };
 }
 
@@ -400,7 +381,7 @@ export function buildReport(data: K6SummaryData, ctx: ReportContext): Report {
   return {
     header,
     http,
-    capacity: buildCapacity(data, header, http, ctx),
+    capacity: buildCapacity(data, header, http),
     components: buildComponents(data, ctx.schema),
     endpoints: buildEndpoints(data, header.testDurationMs),
     debug: buildDebug(data, ctx.schema),
@@ -489,20 +470,6 @@ export function capacityWarning(report: Report): string | null {
   return `${facts.join('. ')}. ${vusNote}; ${cause}. ${advice}.`;
 }
 
-function renderRuns(cap: CapacitySection, colors: boolean): string {
-  const c = palette(colors);
-  if (cap.runs.length === 0) return '';
-  const body = table(
-    ['ratio', 'planned', 'took', 'rps', 'p95', 'failed', ''],
-    cap.runs.map((r) => {
-      const mark = isCapped(r) ? c.yellow('overran') : r.ratio === cap.bestRatio ? c.green('fastest') : '';
-      return [`x${r.ratio}`, fmtDuration(r.plannedMs), fmtDuration(r.durationMs), fmtNum(r.achievedRps, 1), fmtMs(r.p95Ms), String(r.failed), mark];
-    }),
-    ['right', 'right', 'right', 'right', 'right', 'right', 'left'],
-  );
-  return [`${c.bold('RUN TIME BY RATIO')} ${c.dim('(earlier runs of this log against this target)')}`, body].join('\n');
-}
-
 function renderCapacity(cap: CapacitySection, colors: boolean): string {
   const c = palette(colors);
   const title = `${c.bold('LOAD vs LATENCY')} ${c.dim('(offered rps in the request\'s second → latency)')}`;
@@ -561,7 +528,6 @@ export function renderReport(report: Report, top: number, colors: boolean): stri
   const sections = [
     renderHeader(report.header, colors),
     renderHttp(report.http, colors, capacityWarning(report)),
-    renderRuns(report.capacity, colors),
     renderCapacity(report.capacity, colors),
     renderComponents(report.components, report.debug, colors),
     renderEndpoints(report.endpoints, top, colors),

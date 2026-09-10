@@ -85,19 +85,6 @@ describe('renderHtmlReport', () => {
     expect(html).not.toContain('Timeline not kept');
   });
 
-  it('renders the run history chart and table', () => {
-    const key = 'k';
-    const hist = (ratio: number, durationMs: number, plannedMs: number, achievedRps: number) => ({
-      key, at: '2026-09-10T05:00:00Z', ratio, plannedMs, durationMs, achievedRps, requests: 100, failed: 0, lagP50Ms: 0, p95Ms: 300,
-    });
-    const out = renderHtmlReport(buildReport(data, { ...ctx, history: [hist(67.5, 53_500, 53_300, 286), hist(101.3, 63_000, 35_500, 242)], historyKey: key }), 15);
-    expect(out).toContain('Run time by RATIO');
-    expect(out).toContain('<td>x67.5</td><td>53.3s</td><td>53.5s</td><td>286</td>');
-    expect(out).toContain('>overran</td>');
-    expect(out).toContain('Suggested next run: RATIO=82.7');
-    expect((out.match(/<svg/g) ?? []).length).toBe(6);
-  });
-
   it('explains a missing schema', () => {
     const noSchema = renderHtmlReport(buildReport(data, { ...ctx, schema: null }), 15);
     expect(noSchema).toContain('No debug schema');

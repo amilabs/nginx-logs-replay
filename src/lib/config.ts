@@ -47,8 +47,6 @@ export interface Config {
   readonly summaryHtml: string;
   /** Relative link to the k6 dashboard export shown in the HTML report (empty = none). */
   readonly dashboardHref: string;
-  /** Run history file (JSON) used to search for the fastest RATIO across runs; empty = disabled. */
-  readonly history: string;
   readonly colors: boolean;
 }
 
@@ -257,7 +255,6 @@ export function parseConfig(env: Env): Config {
     summaryJson: path(env.SUMMARY_JSON, DEFAULTS.summaryJson),
     summaryHtml: env.SUMMARY_HTML === undefined ? resolvePath(DEFAULTS.summaryHtml, pwd) : resolvePath(env.SUMMARY_HTML.trim(), pwd),
     dashboardHref: (env.DASHBOARD_HREF ?? '').trim(),
-    history: env.HISTORY && env.HISTORY.trim() ? resolvePath(env.HISTORY.trim(), pwd) : '',
     colors: !parseBool(env.NO_COLOR, false),
   };
 }

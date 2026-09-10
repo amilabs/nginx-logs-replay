@@ -6,7 +6,6 @@
 import { SharedArray } from 'k6/data';
 import type { Config } from '../lib/config.ts';
 import { metricCollisions, parseSchema, type DebugSchema } from '../lib/debug-walker.ts';
-import { parseHistory, type HistoryRun } from '../lib/history.ts';
 import { parseLog } from '../lib/nginx-parser.ts';
 import { buildPool, poolStats, type PoolEntry, type PoolStats } from '../lib/request-pool.ts';
 
@@ -69,16 +68,6 @@ export function sharedOnce<T>(name: string, compute: () => T): T {
   const value = holder[0];
   if (value === undefined) throw new Error(`Shared value "${name}" missing`);
   return value;
-}
-
-/** Earlier runs from the HISTORY file; missing or malformed file = empty. */
-export function loadHistory(config: Config): HistoryRun[] {
-  if (!config.history) return [];
-  try {
-    return parseHistory(open(config.history));
-  } catch {
-    return [];
-  }
 }
 
 /** Timestamps of the pool in order (for schedule offsets). */
