@@ -134,9 +134,8 @@ describe('buildReport', () => {
 
   it('finds the load knee and recommends the next ratio', () => {
     expect(report.capacity.rows.map((r) => r.upToRps)).toEqual([3, 6, 12]);
-    expect(report.capacity).toMatchObject({ referenceP95: 60, healthyUpToRps: 6, degradedFromRps: 12, nextRatio: 1, safeRatio: 1 });
-    expect(report.capacity.verdict).toContain('Latency stays flat up to ~6 rps and starts to climb around ~12 rps');
-    expect(report.capacity.verdict).toContain('The log peaks at 6 rps, so the estimated no-degradation level is RATIO x1. Suggested next run: RATIO=1 to confirm');
+    expect(report.capacity).toMatchObject({ referenceP95: 60, healthyUpToRps: 6, degradedFromRps: 12 });
+    expect(report.capacity.note).toBe('Latency stays flat up to ~6 rps and starts to climb around ~12 rps (p95 > 2× the 60ms reference).');
   });
 
   it('reports debug health', () => {
@@ -196,24 +195,7 @@ describe('buildReport', () => {
     expect(rateReport.debug.enabled).toBe(false);
     expect(rateReport.endpoints).toEqual([]);
     expect(rateReport.capacity.rows).toEqual([]);
-    expect(rateReport.capacity.verdict).toContain('Not enough data');
-  });
-
-  it('judges a rate run against the probe baseline', () => {
-    const rateData: K6SummaryData = {
-      metrics: {
-        http_reqs: counter(50, 5),
-        http_req_duration: trend(40, 90, 120, 150, 38),
-        'http_reqs{load:5}': counter(50),
-        'http_req_duration{load:5}': trend(40, 90, 120, 150, 38),
-        'http_req_failed{load:5}': rateMetric(0),
-      },
-    };
-    const okRun = buildReport(rateData, { ...ctx, config: parseConfig({ PREFIX: 'http://h', MODE: 'rate', RPS: '5' }), targetRps: 5, plannedMs: null, probeAvgMs: 60 });
-    expect(okRun.capacity.verdict).toContain('No degradation at 5 rps (p95 90ms vs 60ms baseline). Try RPS=8');
-    const slowData: K6SummaryData = { metrics: { ...rateData.metrics, 'http_req_duration{load:5}': trend(400, 900, 1200, 1500, 380) } };
-    const slowRun = buildReport(slowData, { ...ctx, config: parseConfig({ PREFIX: 'http://h', MODE: 'rate', RPS: '5' }), targetRps: 5, plannedMs: null, probeAvgMs: 60 });
-    expect(slowRun.capacity.verdict).toContain('Degraded at 5 rps: p95 900ms vs 60ms baseline. Try RPS=4');
+    expect(rateReport.capacity.note).toContain('Not enough data');
   });
 });
 
@@ -232,7 +214,7 @@ describe('renderReport', () => {
     expect(text).toContain('schedule lag p95 20.0ms  max 60.0ms');
     expect(text).toContain('LOAD vs LATENCY');
     expect(text).toMatch(/12\s+30\s+0\.00%\s+250ms\s+900ms\s+1\.50s\s+2\.00s\s+climbing/);
-    expect(text).toContain('Suggested next run: RATIO=1');
+    expect(text).toContain('Latency stays flat up to ~6 rps');
     expect(text).toContain('COMPONENTS');
     expect(text).toMatch(/clickhouse\s+1\.00ms\s+30\.0ms\s+30\.0ms\s+90\.0ms\s+90\.0ms\s+200ms\s+700ms\s+120/);
     expect(text).toContain('2 responses without a debug block');

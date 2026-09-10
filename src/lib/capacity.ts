@@ -1,9 +1,8 @@
 /**
  * Latency by offered load: every replayed request is tagged with the rate it
  * was fired at (requests due in the trailing wall-clock second), bucketed so
- * that k6 can expose per-bucket sub-metrics. From those buckets the report
- * finds the load at which latency starts to degrade and converts it into a
- * RATIO for the next run. Pure.
+ * that k6 can expose per-bucket sub-metrics. The report shows latency per
+ * bucket and where it starts to climb. Informational only. Pure.
  */
 
 import type { Percentiles } from './summary.ts';
@@ -102,89 +101,11 @@ export function analyzeCapacity(rows: readonly LoadRow[], probeAvgMs: number | n
   return { rows: sorted, referenceP95, healthyUpToRps: healthy, degradedFromRps: degradedFrom };
 }
 
-export interface Recommendation {
-  readonly verdict: string;
-  /** True when the whole run was over the limit (timeline lag / drops), so the knee is only a lower bound. */
-  readonly saturated: boolean;
-  /** RATIO to run next (replay), rounded to one decimal. */
-  readonly nextRatio: number | null;
-  /** Highest RATIO with no degradation observed in this run, if a knee was found. */
-  readonly safeRatio: number | null;
-}
-
-function round1(value: number): number {
-  return Math.round(value * 10) / 10;
-}
-
-/** Rate mode: one bucket; compare with the discover probe (or the run's own p50 when unknown). */
-export function recommendRps(row: LoadRow | undefined, rps: number, probeAvgMs: number | null): Recommendation {
-  if (!row || row.count === 0) return { verdict: 'Not enough data to judge this rate.', nextRatio: null, safeRatio: null, saturated: false };
-  const reference = probeAvgMs !== null && probeAvgMs > 0 ? probeAvgMs : row.duration.p50;
-  const degraded = isDegraded(row, reference);
-  const ref = Math.round(reference);
-  if (degraded) {
-    const next = Math.max(1, Math.round(rps * 0.7));
-    return {
-      verdict: `Degraded at ${rps} rps: p95 ${Math.round(row.duration.p95)}ms vs ${ref}ms baseline${row.failedRate > FAIL_LIMIT ? `, ${(row.failedRate * 100).toFixed(1)}% failed` : ''}. Try RPS=${next}.`,
-      nextRatio: null,
-      safeRatio: null,
-      saturated: true,
-    };
-  }
-  const next = Math.round(rps * 1.5);
-  return {
-    verdict: `No degradation at ${rps} rps (p95 ${Math.round(row.duration.p95)}ms vs ${ref}ms baseline). Try RPS=${next} to look for the limit.`,
-    nextRatio: null,
-    safeRatio: null,
-    saturated: false,
-  };
-}
-
-/**
- * Turns the knee into advice for the next replay. `originalPeakRps` is the
- * busiest second of the log at ratio 1; `ratio` is this run's ratio;
- * `saturated` says the run as a whole was over the limit (timeline lag or
- * dropped requests), in which case quiet seconds still carry backlog and the
- * knee is only a lower bound, so the next step is a plain cut.
- */
-export function recommendRatio(analysis: CapacityAnalysis, ratio: number, originalPeakRps: number, saturated = false): Recommendation {
-  if (analysis.referenceP95 === null || analysis.rows.length === 0 || originalPeakRps <= 0) {
-    return { verdict: 'Not enough data to locate the degradation point.', nextRatio: null, safeRatio: null, saturated };
-  }
+/** One informational sentence about the latency-by-load table (no advice). */
+export function capacityNote(analysis: CapacityAnalysis): string {
+  if (analysis.referenceP95 === null || analysis.rows.length === 0) return 'Not enough data to see how latency depends on load.';
   const ref = Math.round(analysis.referenceP95);
-  if (analysis.degradedFromRps === null) {
-    const next = round1(ratio * 1.5);
-    return {
-      verdict: `No degradation up to the busiest second of this run (p95 stayed within 2× the ${ref}ms reference). Suggested next run: RATIO=${next} to look for the limit.`,
-      nextRatio: next,
-      safeRatio: ratio,
-      saturated,
-    };
-  }
-  if (analysis.healthyUpToRps === null) {
-    const next = round1(Math.max(0.1, ratio / 2));
-    return {
-      verdict: `Latency was already elevated at the lowest well-populated load of this run (≤ ${analysis.degradedFromRps} rps, p95 > 2× the ${ref}ms reference). Suggested next run: RATIO=${next}.`,
-      nextRatio: next,
-      safeRatio: null,
-      saturated,
-    };
-  }
-  const safe = round1(Math.max(0.1, analysis.healthyUpToRps / originalPeakRps));
-  const knee = `Latency stays flat up to ~${analysis.healthyUpToRps} rps and starts to climb around ~${analysis.degradedFromRps} rps (p95 > 2× the ${ref}ms reference). The log peaks at ${round1(originalPeakRps)} rps, so the estimated no-degradation level is RATIO x${safe}.`;
-  if (saturated) {
-    const next = round1(Math.max(safe, ratio * 0.6));
-    return {
-      verdict: `${knee} This run was over the limit as a whole (requests fired late or were dropped), so quiet seconds still carried backlog and x${safe} is a lower bound. Suggested next run: RATIO=${next}.`,
-      nextRatio: next,
-      safeRatio: safe,
-      saturated,
-    };
-  }
-  return {
-    verdict: `${knee} Suggested next run: RATIO=${safe} to confirm.`,
-    nextRatio: safe,
-    safeRatio: safe,
-    saturated,
-  };
+  if (analysis.degradedFromRps === null) return `Latency stayed flat across all load levels of this run (p95 within 2× the ${ref}ms reference).`;
+  if (analysis.healthyUpToRps === null) return `Latency was already elevated at the lowest well-populated load (≤ ${analysis.degradedFromRps} rps, p95 > 2× the ${ref}ms reference).`;
+  return `Latency stays flat up to ~${analysis.healthyUpToRps} rps and starts to climb around ~${analysis.degradedFromRps} rps (p95 > 2× the ${ref}ms reference).`;
 }

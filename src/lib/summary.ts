@@ -3,7 +3,7 @@
  * console text. The same model feeds html-report.ts. Pure.
  */
 
-import { analyzeCapacity, recommendRatio, recommendRps, type LoadRow } from './capacity.ts';
+import { analyzeCapacity, capacityNote, type LoadRow } from './capacity.ts';
 import type { Config } from './config.ts';
 import type { DebugSchema } from './debug-walker.ts';
 import { fmtBytes, fmtDuration, fmtMs, fmtNum, fmtPct, palette, table } from './format.ts';
@@ -141,11 +141,8 @@ export interface CapacitySection {
   readonly referenceP95: number | null;
   readonly healthyUpToRps: number | null;
   readonly degradedFromRps: number | null;
-  readonly verdict: string;
-  /** RATIO for the next replay, when one can be recommended. */
-  readonly nextRatio: number | null;
-  /** Highest RATIO without degradation seen in this run. */
-  readonly safeRatio: number | null;
+  /** One informational sentence about the table. */
+  readonly note: string;
 }
 
 export interface Report {
@@ -336,21 +333,14 @@ function loadRows(data: K6SummaryData): LoadRow[] {
   return rows.sort((a, b) => a.upToRps - b.upToRps);
 }
 
-function buildCapacity(data: K6SummaryData, header: HeaderSection, http: HttpSection): CapacitySection {
+function buildCapacity(data: K6SummaryData, header: HeaderSection): CapacitySection {
   const analysis = analyzeCapacity(loadRows(data), header.probeAvgMs);
-  const saturated = (http.lagP95 !== null && http.lagP95 > 1000) || http.dropped > 0;
-  const recommendation =
-    header.mode === 'replay'
-      ? recommendRatio(analysis, header.ratio, header.ratio > 0 ? header.targetRps / header.ratio : 0, saturated)
-      : recommendRps(analysis.rows[0], header.rps, header.probeAvgMs);
   return {
     rows: analysis.rows,
     referenceP95: analysis.referenceP95,
     healthyUpToRps: analysis.healthyUpToRps,
     degradedFromRps: analysis.degradedFromRps,
-    verdict: recommendation.verdict,
-    nextRatio: recommendation.nextRatio,
-    safeRatio: recommendation.safeRatio,
+    note: capacityNote(analysis),
   };
 }
 
@@ -369,7 +359,7 @@ export function buildReport(data: K6SummaryData, ctx: ReportContext): Report {
   return {
     header,
     http,
-    capacity: buildCapacity(data, header, http),
+    capacity: buildCapacity(data, header),
     components: buildComponents(data, ctx.schema),
     endpoints: buildEndpoints(data, header.testDurationMs),
     debug: buildDebug(data, ctx.schema),
@@ -461,7 +451,7 @@ export function capacityWarning(report: Report): string | null {
 function renderCapacity(cap: CapacitySection, colors: boolean): string {
   const c = palette(colors);
   const title = `${c.bold('LOAD vs LATENCY')} ${c.dim('(offered rps in the request\'s second → latency)')}`;
-  if (cap.rows.length === 0) return `${title}\n${c.dim(cap.verdict)}`;
+  if (cap.rows.length === 0) return `${title}\n${c.dim(cap.note)}`;
   const body = table(
     ['up to rps', 'requests', 'failed', 'p50', 'p95', 'p99', 'max', ''],
     cap.rows.map((r) => [
@@ -476,8 +466,7 @@ function renderCapacity(cap: CapacitySection, colors: boolean): string {
     ]),
     ['right', 'right', 'right', 'right', 'right', 'right', 'right', 'left'],
   );
-  const verdict = cap.degradedFromRps === null ? c.green(cap.verdict) : c.cyan(cap.verdict);
-  return [title, body, verdict].join('\n');
+  return [title, body, c.dim(cap.note)].join('\n');
 }
 
 function renderComponents(rows: readonly ComponentRow[], debug: DebugSection, colors: boolean): string {

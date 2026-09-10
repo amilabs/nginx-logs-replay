@@ -42,10 +42,6 @@ table.kv td { text-align: left; }
 .legend { color: #6b7280; font-size: 12px; margin-bottom: 4px; }
 .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin: 0 4px 0 10px; vertical-align: -1px; }
 .note { background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 8px 12px; margin: 8px 0; }
-.verdict { border-radius: 8px; padding: 12px 14px; margin: 8px 0 16px; font-size: 15px; }
-.verdict.good { background: #ecfdf5; border: 1px solid #a7f3d0; }
-.verdict.knee { background: #eff6ff; border: 1px solid #bfdbfe; }
-.verdict b { display: block; margin-bottom: 4px; }
 .two { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 @media (max-width: 900px) { .two { grid-template-columns: 1fr; } }
 footer { color: #9ca3af; font-size: 12px; margin-top: 28px; }
@@ -155,13 +151,8 @@ ${barChart(rows, { labelWidth: 80 })}
 }
 
 function renderCapacity(cap: CapacitySection): string {
-  const cls = cap.degradedFromRps === null ? 'good' : 'knee';
-  const headline =
-    cap.nextRatio !== null
-      ? `Suggested next run: RATIO=${cap.nextRatio}${cap.safeRatio !== null && cap.degradedFromRps !== null ? ` (estimated no-degradation level: x${cap.safeRatio})` : ''}`
-      : 'Suggested next run';
-  const verdict = `<div class="verdict ${cls}"><b>${escapeHtml(headline)}</b>${escapeHtml(cap.verdict)}</div>`;
-  if (cap.rows.length === 0) return `<h2>Load vs latency</h2>${verdict}`;
+  const note = `<p class="sub">${escapeHtml(cap.note)}</p>`;
+  if (cap.rows.length === 0) return `<h2>Load vs latency</h2>${note}`;
   const bars: BarRow[] = cap.rows.map((r) => ({
     label: `≤ ${r.upToRps} rps (${r.count} req)`,
     value: r.duration.p95,
@@ -176,7 +167,7 @@ function renderCapacity(cap: CapacitySection): string {
     )
     .join('\n');
   return `<h2>Load vs latency <small>(offered rps in the second each request was due → its latency; a bucket counts with ≥100 requests and ≥2% of the run; "climbing" = p95 above 2× the low-load p95 + 200ms, or &gt;1% failed)</small></h2>
-${verdict}
+${note}
 <div class="legend"><i style="background:#60a5fa"></i>p95 <i style="background:#1d4ed8"></i>p50 <i style="background:#ef4444"></i>latency climbing</div>
 ${barChart(bars, { labelWidth: 170 })}
 <table><thead><tr><th>offered load</th><th>requests</th><th>failed</th>${pctHeaderCells()}<th></th></tr></thead><tbody>

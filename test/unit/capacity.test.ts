@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { analyzeCapacity, isDegraded, loadEdges, loadTag, minSamples, offeredRps, recommendRatio, type LoadRow } from '../../src/lib/capacity.ts';
+import { analyzeCapacity, capacityNote, isDegraded, loadEdges, loadTag, minSamples, offeredRps, type LoadRow } from '../../src/lib/capacity.ts';
 
 const pct = (p95: number, avg = p95 / 2) => ({ min: 1, avg, p50: avg, p75: avg, p90: p95, p95, p99: p95 * 2, p999: p95 * 3, max: p95 * 3 });
 const row = (upToRps: number, p95: number, count = 100, failedRate = 0): LoadRow => ({ upToRps, count, failedRate, duration: pct(p95) });
@@ -58,7 +58,6 @@ describe('analyzeCapacity', () => {
     expect(a.referenceP95).toBe(163);
     expect(a.healthyUpToRps).toBe(111);
     expect(a.degradedFromRps).toBe(139);
-    expect(recommendRatio(a, 25, 8.8).verdict).toContain('Latency stays flat up to ~111 rps and starts to climb around ~139 rps (p95 > 2× the 163ms reference). The log peaks at 8.8 rps, so the estimated no-degradation level is RATIO x12.6. Suggested next run: RATIO=12.6 to confirm.');
   });
 
   it('anchors the reference to the discover probe when every bucket is slow', () => {
@@ -78,38 +77,11 @@ describe('analyzeCapacity', () => {
   });
 });
 
-describe('recommendRatio', () => {
-  it('converts the knee into a RATIO using the log peak', () => {
-    const a = analyzeCapacity([row(44, 60), row(88, 70), row(132, 90), row(176, 110), row(220, 400), row(352, 2900)]);
-    const r = recommendRatio(a, 20, 17.6);
-    expect(r.safeRatio).toBe(10);
-    expect(r.nextRatio).toBe(10);
-    expect(r.verdict).toContain('Latency stays flat up to ~176 rps and starts to climb around ~220 rps');
-    expect(r.verdict).toContain('estimated no-degradation level is RATIO x10. Suggested next run: RATIO=10 to confirm');
-    expect(r.saturated).toBe(false);
-  });
-
-  it('treats the knee as a lower bound and cuts by 0.6 when the run was saturated', () => {
-    const a = analyzeCapacity([row(44, 60), row(88, 70), row(132, 900), row(176, 2000)]);
-    const r = recommendRatio(a, 25, 8.8, true);
-    expect(r.safeRatio).toBe(10);
-    expect(r.nextRatio).toBe(15);
-    expect(r.verdict).toContain('x10 is a lower bound. Suggested next run: RATIO=15');
-    expect(r.saturated).toBe(true);
-  });
-
-  it('suggests going up when nothing degraded and down when everything did', () => {
-    const fine = recommendRatio(analyzeCapacity([row(44, 60), row(88, 70)]), 20, 17.6);
-    expect(fine).toMatchObject({ nextRatio: 30, safeRatio: 20 });
-    expect(fine.verdict).toContain('Suggested next run: RATIO=30');
-    const bad = recommendRatio(analyzeCapacity([row(44, 60), row(88, 70, 100, 0.5)]), 20, 17.6);
-    expect(bad.safeRatio).toBe(round(44 / 17.6));
-    const worst = recommendRatio({ rows: [row(44, 60, 100, 0.5)], referenceP95: 60, healthyUpToRps: null, degradedFromRps: 44 }, 20, 17.6);
-    expect(worst).toMatchObject({ nextRatio: 10, safeRatio: null });
-    expect(recommendRatio(analyzeCapacity([]), 20, 17.6).nextRatio).toBeNull();
+describe('capacityNote', () => {
+  it('describes the table without advice', () => {
+    expect(capacityNote(analyzeCapacity([row(44, 60), row(88, 70), row(132, 900)]))).toBe('Latency stays flat up to ~88 rps and starts to climb around ~132 rps (p95 > 2× the 60ms reference).');
+    expect(capacityNote(analyzeCapacity([row(44, 60), row(88, 70)]))).toBe('Latency stayed flat across all load levels of this run (p95 within 2× the 60ms reference).');
+    expect(capacityNote(analyzeCapacity([row(44, 900, 100, 0.5)]))).toContain('already elevated at the lowest well-populated load');
+    expect(capacityNote(analyzeCapacity([]))).toContain('Not enough data');
   });
 });
-
-function round(value: number): number {
-  return Math.round(value * 10) / 10;
-}

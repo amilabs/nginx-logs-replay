@@ -51,7 +51,8 @@ describe('renderHtmlReport', () => {
     expect(html).toContain('clickhouse');
     expect((html.match(/<svg/g) ?? []).length).toBe(5);
     expect(html).toContain('Load vs latency');
-    expect(html).toContain('Suggested next run: RATIO=1 (estimated no-degradation level: x1)');
+    expect(html).toContain('Latency stays flat up to ~6 rps and starts to climb around ~12 rps');
+    expect(html).not.toContain('Suggested next run');
     expect(html).toContain('<td>≤ 12</td><td>30</td>');
     expect(html).toMatch(/<td>\/a<\/td><td>100<\/td><td>8\.33<\/td>/);
     expect(html).toContain('href="k6-dashboard.html"');

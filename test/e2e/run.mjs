@@ -95,7 +95,7 @@ async function main() {
     assert.ok(replay.report.header.vusAuto === false && replay.report.header.vus === 5, 'explicit VUS honoured');
     assert.ok(typeof schema.probe.avgDurationMs === 'number' && schema.probe.avgDurationMs > 0, 'discover stored probe latency');
     assert.ok(replay.report.capacity.rows.length > 0 && replay.report.capacity.rows.every((r) => r.count > 0), 'latency-by-load rows present');
-    assert.ok(typeof replay.report.capacity.verdict === 'string' && replay.report.capacity.verdict.includes('RATIO='), 'ratio recommendation present');
+    assert.ok(typeof replay.report.capacity.note === 'string' && replay.report.capacity.note.length > 0, 'latency-by-load note present');
     const html = readFileSync(htmlPath, 'utf8');
     assert.ok(html.startsWith('<!DOCTYPE html>') && html.includes('<svg') && html.includes('clickhouse') && html.includes('/slow'), 'HTML report written');
     const received = (await stats(port)).received.slice(before);
@@ -118,7 +118,7 @@ async function main() {
     assert.equal(rate.report.http.lagP95, null, 'no lag metric in rate mode');
     assert.ok(rate.report.header.vusAuto === true && rate.report.header.vus === 20 && rate.report.header.maxVus === 200, 'rate mode auto VUs');
     assert.ok(rate.report.components.length > 0);
-    assert.ok(rate.report.capacity.rows.length === 1 && rate.report.capacity.verdict.includes('RPS='), 'rate verdict present');
+    assert.ok(rate.report.capacity.rows.length === 1, 'rate mode has one load bucket');
 
     console.log('e2e: OK');
   } finally {
